@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useSearchParams } from "next/navigation";
+
 
 type Project = {
   id: string;
@@ -42,8 +42,7 @@ export default function InputPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [projectId, setProjectId] = useState<string>("");
-  const searchParams = useSearchParams();
-  const urlProjectId = searchParams.get("projectId") || "";
+  const [urlProjectId, setUrlProjectId] = useState<string>("");
 
   // stage_id -> row
   const [rows, setRows] = useState<Record<string, Update>>({});
@@ -82,6 +81,11 @@ export default function InputPage() {
 
   // 2) 단계 목록 로딩 + 프로젝트 목록 로딩
 useEffect(() => {
+  const id = new URLSearchParams(window.location.search).get("projectId") || "";
+  setUrlProjectId(id);
+}, []);
+
+useEffect(() => {
   (async () => {
     await refreshProjects(urlProjectId || undefined);
 
@@ -89,7 +93,7 @@ useEffect(() => {
     setStages((s.data ?? []) as Stage[]);
   })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+}, [urlProjectId]);
 
   // 3) 프로젝트 선택 시 해당 프로젝트의 stage_updates 불러오기
   useEffect(() => {
@@ -103,7 +107,7 @@ useEffect(() => {
 		    plan_date, actual_date, approve_date,
 		    remark_design_work, remark_outsource_design,
 		    vendor_assembly, vendor_install, vendor_control, vendor_program,
-		    meeting_type, memo
+		    memo
 		  `)
 	  .eq("project_id", projectId);
 
@@ -123,7 +127,6 @@ useEffect(() => {
 	  vendor_install: null,
 	  vendor_control: null,
 	  vendor_program: null,
-          meeting_type: "해당없음",
           memo: null,
         };
       }
@@ -156,7 +159,12 @@ useEffect(() => {
       approve_date: r.approve_date || null,
       remark_design_work: !!r.remark_design_work,
       remark_outsource_design: !!r.remark_outsource_design,
-      meeting_type: r.meeting_type || "해당없음",
+
+      vendor_assembly: r.vendor_assembly || null,
+      vendor_install: r.vendor_install || null,
+      vendor_control: r.vendor_control || null,
+      vendor_program: r.vendor_program || null,
+
       memo: r.memo || null,
       updated_at: new Date().toISOString(),
     }));
@@ -367,7 +375,7 @@ useEffect(() => {
 			  rows={1}
 			  style={{
 			    width: "100%",
-                            minwith: 380,
+                            minWidth: 380,
 			    minHeight: 28,
 			    resize: "none",      // 사용자가 수동으로 늘리지 못하게
 			    overflow: "hidden",  // 스크롤 숨김

@@ -235,7 +235,7 @@ const thStageGroup: React.CSSProperties = {
   zIndex: 2,
   height: 30,
   fontSize: "10pt",
-  linehight: "26px"
+  lineHeight: "26px"
 };
 
 function fmt(date?: string | null) {
@@ -270,8 +270,8 @@ const tdCell: React.CSSProperties = {
   textAlign: "center",
   whiteSpace: "nowrap",
   overflow: "hidden",
-  textoverflow: "ellipsis",
-  fontsize: "10pt",
+  textOverflow: "ellipsis",
+  fontSize: "10pt",
 };
 
 function thStickyLeft(leftPx: number, width: number): React.CSSProperties {
