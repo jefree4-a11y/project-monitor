@@ -50,6 +50,7 @@ export default function InputPage() {
   const [stages, setStages] = useState<Stage[]>([]);
   const [projectId, setProjectId] = useState<string>("");
   const [urlProjectId, setUrlProjectId] = useState<string>("");
+  const [editOpen, setEditOpen] = useState(false);
 
   // stage_id -> row
   const [rows, setRows] = useState<Record<string, Update>>({});
@@ -65,6 +66,19 @@ export default function InputPage() {
   const [newDueDate, setNewDueDate] = useState("");
   const [newStatus, setNewStatus] = useState("진행");
   const [newPmEmail, setNewPmEmail] = useState("");
+
+// ---- 프로젝트 수정 모달 상태 ----
+
+const [editCode, setEditCode] = useState("");
+const [editName, setEditName] = useState("");
+const [editCustomer, setEditCustomer] = useState("");
+const [editInstallLocation, setEditInstallLocation] = useState("");
+const [editOrderDate, setEditOrderDate] = useState("");
+const [editDueDate, setEditDueDate] = useState("");
+const [editStatus, setEditStatus] = useState<"진행" | "보류" | "완료">("진행");
+const [editPmEmail, setEditPmEmail] = useState("");
+
+
 
   // 공통 TD 스타일(정렬 깨짐 방지)
   const tdCenter: React.CSSProperties = { verticalAlign: "middle", textAlign: "center" };
@@ -273,20 +287,62 @@ export default function InputPage() {
     alert("프로젝트가 추가되었습니다.");
   }
 
+async function updateProject() {
+  if (!selected) return alert("수정할 프로젝트를 먼저 선택하세요.");
+  if (!editName.trim()) return alert("프로젝트명은 필수입니다.");
+
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      // project_code는 보통 키처럼 쓰니 수정 막는 걸 추천 (원하면 허용 가능)
+      name: editName.trim(),
+      customer: editCustomer.trim() || null,
+      install_location: editInstallLocation.trim() || null,
+      order_date: editOrderDate || null,
+      due_date: editDueDate || null,
+      status: editStatus,
+      pm_email: editPmEmail.trim() || null,
+    })
+    .eq("id", selected.id);
+
+  if (error) return alert(error.message);
+
+  setEditOpen(false);
+
+  // 목록 갱신(선택 유지)
+  await refreshProjects(selected.id);
+  alert("프로젝트 정보가 수정되었습니다.");
+}
+
+
   const selected = projects.find((p) => p.id === projectId);
+
+useEffect(() => {
+  if (!selected) return;
+
+  setEditCode(selected.project_code ?? "");
+  setEditName(selected.name ?? "");
+  setEditCustomer(selected.customer ?? "");
+  setEditInstallLocation(selected.install_location ?? "");
+  setEditOrderDate(selected.order_date ?? "");
+  setEditDueDate(selected.due_date ?? "");
+  setEditStatus((selected.status as any) ?? "진행");
+  setEditPmEmail(selected.pm_email ?? "");
+}, [selected]);
+
 
   return (
     <div style={{ padding: 16, height: "100vh", overflowY: "auto" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <h2 style={{ margin: 0 }}>입력화면 (PM용)</h2>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setOpen(true)}>+ 프로젝트 추가</button>
-          <button onClick={saveAll}>전체 저장</button>
-          <a href="/dashboard" style={{ alignSelf: "center" }}>
-            대시보드
-          </a>
-        </div>
+	<div style={{ display: "flex", gap: 8 }}>
+	  <button onClick={() => setOpen(true)}>+ 프로젝트 추가</button>
+	  <button onClick={() => setEditOpen(true)} disabled={!selected}>✎ 프로젝트 수정</button>
+	  <button onClick={saveAll}>전체 저장</button>
+	  <a href="/dashboard" style={{ alignSelf: "center" }}>대시보드</a>
+	</div>
+
       </div>
 
       {/* 프로젝트 선택 */}
@@ -509,6 +565,58 @@ export default function InputPage() {
     </div>
   );
 }
+
+{/* ---- 프로젝트 수정 모달 ---- */}
+{editOpen && selected && (
+  <div style={overlay}>
+    <div style={modal}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <h3 style={{ margin: 0 }}>프로젝트 수정</h3>
+        <button onClick={() => setEditOpen(false)}>닫기</button>
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "140px 1fr", gap: 10 }}>
+        <label>프로젝트 코드</label>
+        <input value={editCode} disabled />
+
+        <label>프로젝트명*</label>
+        <input value={editName} onChange={(e) => setEditName(e.target.value)} />
+
+        <label>고객사</label>
+        <input value={editCustomer} onChange={(e) => setEditCustomer(e.target.value)} />
+
+        <label>설치위치</label>
+        <input value={editInstallLocation} onChange={(e) => setEditInstallLocation(e.target.value)} />
+
+        <label>수주일자</label>
+        <input type="date" value={editOrderDate} onChange={(e) => setEditOrderDate(e.target.value)} />
+
+        <label>납기일</label>
+        <input type="date" value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} />
+
+        <label>상태</label>
+        <select value={editStatus} onChange={(e) => setEditStatus(e.target.value as any)}>
+          <option value="진행">진행</option>
+          <option value="보류">보류</option>
+          <option value="완료">완료</option>
+        </select>
+
+        <label>PM 이메일</label>
+        <input value={editPmEmail} onChange={(e) => setEditPmEmail(e.target.value)} />
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button onClick={() => setEditOpen(false)}>취소</button>
+        <button onClick={updateProject}>저장</button>
+      </div>
+
+      <p style={{ marginTop: 10, color: "#666" }}>
+        * 프로젝트 코드는 일반적으로 고유키로 사용되므로 수정은 비활성화했습니다.
+      </p>
+    </div>
+  </div>
+)}
+
 
 /** 모달 스타일 */
 const overlay: React.CSSProperties = {
