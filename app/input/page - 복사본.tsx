@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
+
 type Project = {
   id: string;
   project_code: string;
@@ -28,11 +29,12 @@ type Update = {
   remark_design_work: boolean;
   remark_outsource_design: boolean;
 
-  vendor_assembly: string | null;
+  vendor_assembly: string | null;   // ⭐ 추가
   vendor_install: string | null;
   vendor_control: string | null;
   vendor_program: string | null;
 
+//  meeting_type: string;
   memo: string | null;
 };
 
@@ -71,36 +73,27 @@ export default function InputPage() {
       setProjectId(selectId);
       return;
     }
-
-    // URL에서 넘어온 프로젝트가 있으면 우선 선택
-    if (urlProjectId) {
-      setProjectId(urlProjectId);
-      return;
-    }
-
-    // URL이 없으면 첫 프로젝트 자동 선택
+    
     if (!projectId && list.length > 0) {
       setProjectId(list[0].id);
     }
   }
 
-  // 2-1) URL에서 projectId 읽기 (useSearchParams 없이)
-  useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("projectId") || "";
-    setUrlProjectId(id);
-  }, []);
+  // 2) 단계 목록 로딩 + 프로젝트 목록 로딩
+useEffect(() => {
+  const id = new URLSearchParams(window.location.search).get("projectId") || "";
+  setUrlProjectId(id);
+}, []);
 
-  // 2-2) 단계 목록 로딩 + 프로젝트 목록 로딩
-  // urlProjectId가 세팅된 뒤에 실행되도록 의존성 추가
-  useEffect(() => {
-    (async () => {
-      await refreshProjects(urlProjectId || undefined);
+useEffect(() => {
+  (async () => {
+    await refreshProjects(urlProjectId || undefined);
 
-      const s = await supabase.from("stages").select("id, name, sort_order").order("sort_order");
-      setStages((s.data ?? []) as Stage[]);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlProjectId]);
+    const s = await supabase.from("stages").select("id, name, sort_order").order("sort_order");
+    setStages((s.data ?? []) as Stage[]);
+  })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [urlProjectId]);
 
   // 3) 프로젝트 선택 시 해당 프로젝트의 stage_updates 불러오기
   useEffect(() => {
@@ -110,13 +103,13 @@ export default function InputPage() {
       const u = await supabase
         .from("stage_updates")
         .select(`
-          project_id, stage_id, assignee,
-          plan_date, actual_date, approve_date,
-          remark_design_work, remark_outsource_design,
-          vendor_assembly, vendor_install, vendor_control, vendor_program,
-          memo
-        `)
-        .eq("project_id", projectId);
+    		project_id, stage_id, assignee,
+		    plan_date, actual_date, approve_date,
+		    remark_design_work, remark_outsource_design,
+		    vendor_assembly, vendor_install, vendor_control, vendor_program,
+		    memo
+		  `)
+	  .eq("project_id", projectId);
 
       // 기본 틀 생성
       const base: Record<string, Update> = {};
@@ -131,9 +124,9 @@ export default function InputPage() {
           remark_design_work: false,
           remark_outsource_design: false,
           vendor_assembly: null,
-          vendor_install: null,
-          vendor_control: null,
-          vendor_program: null,
+	  vendor_install: null,
+	  vendor_control: null,
+	  vendor_program: null,
           memo: null,
         };
       }
@@ -164,7 +157,6 @@ export default function InputPage() {
       plan_date: r.plan_date || null,
       actual_date: r.actual_date || null,
       approve_date: r.approve_date || null,
-
       remark_design_work: !!r.remark_design_work,
       remark_outsource_design: !!r.remark_outsource_design,
 
@@ -177,7 +169,9 @@ export default function InputPage() {
       updated_at: new Date().toISOString(),
     }));
 
-    const { error } = await supabase.from("stage_updates").upsert(payload, { onConflict: "project_id,stage_id" });
+    const { error } = await supabase
+      .from("stage_updates")
+      .upsert(payload, { onConflict: "project_id,stage_id" });
 
     if (error) return alert(error.message);
     alert("저장 완료!");
@@ -227,22 +221,18 @@ export default function InputPage() {
   const selected = projects.find((p) => p.id === projectId);
 
   return (
-    <div
-      style={{
-        padding: 16,
-        height: "100vh",
-        overflowY: "auto",
-      }}
-    >
+    <div style={{ 
+       padding: 16,
+       height: "100vh",
+       overflowY: "auto",
+     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <h2 style={{ margin: 0 }}>입력화면 (PM용)</h2>
 
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setOpen(true)}>+ 프로젝트 추가</button>
           <button onClick={saveAll}>전체 저장</button>
-          <a href="/dashboard" style={{ alignSelf: "center" }}>
-            대시보드
-          </a>
+          <a href="/dashboard" style={{ alignSelf: "center" }}>대시보드</a>
         </div>
       </div>
 
@@ -260,24 +250,12 @@ export default function InputPage() {
         {/* 선택 프로젝트 정보(상단 표시) */}
         {selected && (
           <div style={{ marginTop: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
-            <div>
-              <b>고객사</b>: {selected.customer ?? "-"}
-            </div>
-            <div>
-              <b>설치위치</b>: {selected.install_location ?? "-"}
-            </div>
-            <div>
-              <b>수주일자</b>: {selected.order_date ?? "-"}
-            </div>
-            <div>
-              <b>납기일</b>: {selected.due_date ?? "-"}
-            </div>
-            <div>
-              <b>상태</b>: {selected.status}
-            </div>
-            <div>
-              <b>PM</b>: {selected.pm_email ?? "-"}
-            </div>
+            <div><b>고객사</b>: {selected.customer ?? "-"}</div>
+            <div><b>설치위치</b>: {selected.install_location ?? "-"}</div>
+            <div><b>수주일자</b>: {selected.order_date ?? "-"}</div>
+            <div><b>납기일</b>: {selected.due_date ?? "-"}</div>
+            <div><b>상태</b>: {selected.status}</div>
+            <div><b>PM</b>: {selected.pm_email ?? "-"}</div>
           </div>
         )}
       </div>
@@ -295,22 +273,20 @@ export default function InputPage() {
             <th style={{ width: 420 }}>메모</th>
           </tr>
         </thead>
-
         <tbody>
           {stages.map((st) => (
             <tr key={st.id}>
               <td style={{ whiteSpace: "nowrap" }}>
                 {st.id}. {st.name}
               </td>
-
-              <td>
-                <input
-                  style={{ width: 120 }}
-                  value={rows[st.id]?.assignee ?? ""}
-                  onChange={(e) => setField(st.id, "assignee", e.target.value)}
-                  placeholder="담당자"
-                />
-              </td>
+		<td>
+		  <input
+		    style={{ width: 120 }}
+		    value={rows[st.id]?.assignee ?? ""}
+		    onChange={(e) => setField(st.id, "assignee", e.target.value)}
+		    placeholder="담당자"
+		  />
+		</td>
 
               <td>
                 <input
@@ -335,75 +311,77 @@ export default function InputPage() {
                   onChange={(e) => setField(st.id, "approve_date", e.target.value || null)}
                 />
               </td>
+              
+<td style={{ verticalAlign: "top" }}>
+  {st.id === "7-1" ? (
 
-              {/* 비고 */}
-              <td style={{ verticalAlign: "top" }}>
-                {st.id === "7-1" ? (
-                  // 7-1 CHECK SHEET
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
-                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <input
-                        type="checkbox"
-                        checked={!!rows[st.id]?.remark_design_work}
-                        onChange={(e) => setField(st.id, "remark_design_work", e.target.checked)}
-                      />
-                      설계업무
-                    </label>
+    /* 7-1 CHECK SHEET */
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
+      <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="checkbox"
+          checked={!!rows[st.id]?.remark_design_work}
+          onChange={(e) => setField(st.id, "remark_design_work", e.target.checked)}
+        />
+        설계업무
+      </label>
 
-                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <input
-                        type="checkbox"
-                        checked={!!rows[st.id]?.remark_outsource_design}
-                        onChange={(e) => setField(st.id, "remark_outsource_design", e.target.checked)}
-                      />
-                      외주설계
-                    </label>
-                  </div>
-                ) : st.id === "8" ? (
-                  // 8. 업체선정
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {[
-                      ["vendor_assembly", "조립"],
-                      ["vendor_install", "설치"],
-                      ["vendor_control", "제어"],
-                      ["vendor_program", "프로그램"],
-                    ].map(([key, label]) => (
-                      <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ width: 80 }}>● {label}</span>
-                        <input
-                          style={{ width: 120 }}
-                          value={(rows[st.id] as any)?.[key] ?? ""}
-                          onChange={(e) => setField(st.id, key as any, e.target.value)}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  "-"
-                )}
-              </td>
+      <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="checkbox"
+          checked={!!rows[st.id]?.remark_outsource_design}
+          onChange={(e) => setField(st.id, "remark_outsource_design", e.target.checked)}
+        />
+        외주설계
+      </label>
+    </div>
 
-              {/* 메모 */}
-              <td style={{ verticalAlign: "top" }}>
-                <textarea
-                  value={rows[st.id]?.memo ?? ""}
-                  onChange={(e) => {
-                    setField(st.id, "memo", e.target.value);
+  ) : st.id === "8" ? (
 
-                    // 자동 높이 조절
-                    e.target.style.height = "auto";
-                    e.target.style.height = e.target.scrollHeight + "px";
-                  }}
-                  rows={1}
-                  style={{
-                    width: "100%",
-                    minWidth: 380,
-                    minHeight: 28,
-                    resize: "none",
-                    overflow: "hidden",
-                    lineHeight: "18px",
-                  }}
-                />
+    /* 8. 업체선정 */
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {[
+        ["vendor_assembly", "조립"],
+        ["vendor_install", "설치"],
+        ["vendor_control", "제어"],
+        ["vendor_program", "프로그램"],
+      ].map(([key, label]) => (
+        <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 80 }}>● {label}</span>
+          <input
+            style={{ width: 120 }}
+            value={(rows[st.id] as any)?.[key] ?? ""}
+            onChange={(e) => setField(st.id, key as any, e.target.value)}
+          />
+        </div>
+      ))}
+    </div>
+
+  ) : (
+    "-"
+  )}
+</td>
+
+              <td>
+			<textarea
+			  value={rows[st.id]?.memo ?? ""}
+			  onChange={(e) => {
+			    setField(st.id, "memo", e.target.value);
+
+			    // ⭐ 자동 높이 조절
+			    e.target.style.height = "auto";
+			    e.target.style.height = e.target.scrollHeight + "px";
+			  }}
+			  rows={1}
+			  style={{
+			    width: "100%",
+                            minWidth: 380,
+			    minHeight: 28,
+			    resize: "none",      // 사용자가 수동으로 늘리지 못하게
+			    overflow: "hidden",  // 스크롤 숨김
+			    lineHeight: "18px",
+			  }}
+			/>
               </td>
             </tr>
           ))}
@@ -454,7 +432,9 @@ export default function InputPage() {
               <button onClick={addProject}>저장</button>
             </div>
 
-            <p style={{ marginTop: 10, color: "#666" }}>* 프로젝트 코드는 중복될 수 없습니다.</p>
+            <p style={{ marginTop: 10, color: "#666" }}>
+              * 프로젝트 코드는 중복될 수 없습니다.
+            </p>
           </div>
         </div>
       )}
