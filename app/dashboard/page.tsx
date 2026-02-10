@@ -166,9 +166,7 @@ export default function DashboardPage() {
         </table>
       </div>
 
-      <p style={{ marginTop: 10, color: "#666" }}>
-        * 가로 스크롤로 전체 단계를 확인할 수 있습니다. (헤더/왼쪽 2열 고정)
-      </p>
+
     </div>
   );
 }
