@@ -42,6 +42,18 @@ export default function InputPage() {
   const [projectId, setProjectId] = useState<string>("");
   const [urlProjectId, setUrlProjectId] = useState<string>("");
 
+function addDaysISO(base: string, days: number) {
+  // base: "YYYY-MM-DD"
+  const d = new Date(`${base}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+
+
   // stage_id -> row
   const [rows, setRows] = useState<Record<string, Update>>({});
 
@@ -290,7 +302,7 @@ export default function InputPage() {
             <th>담당자</th>
             <th>계획일</th>
             <th>실적일</th>
-            <th>승인일</th>
+            <th>승인일(품질관리팀)</th>
             <th style={{ width: 180 }}>비고</th>
             <th style={{ width: 420 }}>메모</th>
           </tr>
@@ -312,13 +324,29 @@ export default function InputPage() {
                 />
               </td>
 
-              <td>
-                <input
-                  type="date"
-                  value={rows[st.id]?.plan_date ?? ""}
-                  onChange={(e) => setField(st.id, "plan_date", e.target.value || null)}
-                />
-              </td>
+<input
+  type="date"
+  value={rows[st.id]?.plan_date ?? ""}
+  onChange={(e) => {
+    const v = e.target.value || null;
+
+    // 1) 현재 단계 plan_date 저장
+    setField(st.id, "plan_date", v);
+
+    // 2) ✅ 1. 작업지시서(plan) 입력 시 2~5 자동 계산
+    //    ※ 단계 id가 "1","2","3","4","5" 라는 가정 (지금 화면 표기와 동일)
+    if (st.id === "1" && v) {
+      setRows((prev) => ({
+        ...prev,
+        ["1"]: { ...prev["1"], plan_date: v },
+        ["2"]: { ...prev["2"], plan_date: addDaysISO(v, 7) },
+        ["3"]: { ...prev["3"], plan_date: addDaysISO(v, 10) },
+        ["4"]: { ...prev["4"], plan_date: addDaysISO(v, 12) },
+        ["5"]: { ...prev["5"], plan_date: addDaysISO(v, 14) },
+      }));
+    }
+  }}
+/>
 
               <td>
                 <input
