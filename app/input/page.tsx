@@ -36,14 +36,7 @@ type Update = {
   memo: string | null;
 };
 
-export default function InputPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [stages, setStages] = useState<Stage[]>([]);
-  const [projectId, setProjectId] = useState<string>("");
-  const [urlProjectId, setUrlProjectId] = useState<string>("");
-
 function addDaysISO(base: string, days: number) {
-  // base: "YYYY-MM-DD"
   const d = new Date(`${base}T00:00:00`);
   d.setDate(d.getDate() + days);
   const yyyy = d.getFullYear();
@@ -52,7 +45,11 @@ function addDaysISO(base: string, days: number) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-
+export default function InputPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [stages, setStages] = useState<Stage[]>([]);
+  const [projectId, setProjectId] = useState<string>("");
+  const [urlProjectId, setUrlProjectId] = useState<string>("");
 
   // stage_id -> row
   const [rows, setRows] = useState<Record<string, Update>>({});
@@ -63,11 +60,15 @@ function addDaysISO(base: string, days: number) {
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
   const [newCustomer, setNewCustomer] = useState("");
-  const [newInstallLocation, setNewInstallLocation] = useState(""); // 설치위치
-  const [newOrderDate, setNewOrderDate] = useState(""); // 수주일자
-  const [newDueDate, setNewDueDate] = useState(""); // 납기일
+  const [newInstallLocation, setNewInstallLocation] = useState("");
+  const [newOrderDate, setNewOrderDate] = useState("");
+  const [newDueDate, setNewDueDate] = useState("");
   const [newStatus, setNewStatus] = useState("진행");
   const [newPmEmail, setNewPmEmail] = useState("");
+
+  // 공통 TD 스타일(정렬 깨짐 방지)
+  const tdCenter: React.CSSProperties = { verticalAlign: "middle", textAlign: "center" };
+  const tdTop: React.CSSProperties = { verticalAlign: "top" };
 
   // 1) 프로젝트 목록 갱신
   async function refreshProjects(selectId?: string) {
@@ -96,14 +97,13 @@ function addDaysISO(base: string, days: number) {
     }
   }
 
-  // 2-1) URL에서 projectId 읽기 (useSearchParams 없이)
+  // 2-1) URL에서 projectId 읽기
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("projectId") || "";
     setUrlProjectId(id);
   }, []);
 
-  // 2-2) 단계 목록 로딩 + 프로젝트 목록 로딩
-  // urlProjectId가 세팅된 뒤에 실행되도록 의존성 추가
+  // 2-2) 단계 목록 + 프로젝트 목록 로딩
   useEffect(() => {
     (async () => {
       await refreshProjects(urlProjectId || undefined);
@@ -114,20 +114,22 @@ function addDaysISO(base: string, days: number) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlProjectId]);
 
-  // 3) 프로젝트 선택 시 해당 프로젝트의 stage_updates 불러오기
+  // 3) 프로젝트 선택 시 stage_updates 불러오기
   useEffect(() => {
     if (!projectId || stages.length === 0) return;
 
     (async () => {
       const u = await supabase
         .from("stage_updates")
-        .select(`
+        .select(
+          `
           project_id, stage_id, assignee,
           plan_date, actual_date, approve_date,
           remark_design_work, remark_outsource_design,
           vendor_assembly, vendor_install, vendor_control, vendor_program,
           memo
-        `)
+        `
+        )
         .eq("project_id", projectId);
 
       // 기본 틀 생성
@@ -165,6 +167,40 @@ function addDaysISO(base: string, days: number) {
     }));
   }
 
+  // ✅ 1번 계획일 변경 처리 (2~5 무조건 자동 덮어쓰기 + 2~5 수동금지와 세트)
+  function onChangePlanDate(stageId: string, v: string | null) {
+    // 2~5는 변경 금지
+    if (["2", "3", "4", "5"].includes(stageId)) return;
+
+    // 1번이 아니면 그냥 저장만
+    if (stageId !== "1") {
+      setField(stageId, "plan_date", v);
+      return;
+    }
+
+    // 1번 저장 + 2~5 자동 덮어쓰기
+    setRows((prev) => {
+      const next = { ...prev };
+
+      next["1"] = { ...next["1"], plan_date: v };
+
+      if (v) {
+        next["2"] = { ...next["2"], plan_date: addDaysISO(v, 7) };
+        next["3"] = { ...next["3"], plan_date: addDaysISO(v, 10) };
+        next["4"] = { ...next["4"], plan_date: addDaysISO(v, 12) };
+        next["5"] = { ...next["5"], plan_date: addDaysISO(v, 14) };
+      } else {
+        // 1번을 비우면 2~5도 비우기 (원치 않으면 삭제 가능)
+        next["2"] = { ...next["2"], plan_date: null };
+        next["3"] = { ...next["3"], plan_date: null };
+        next["4"] = { ...next["4"], plan_date: null };
+        next["5"] = { ...next["5"], plan_date: null };
+      }
+
+      return next;
+    });
+  }
+
   // 4) 단계 입력값 저장
   async function saveAll() {
     if (!projectId) return alert("프로젝트를 먼저 선택하세요.");
@@ -189,13 +225,15 @@ function addDaysISO(base: string, days: number) {
       updated_at: new Date().toISOString(),
     }));
 
-    const { error } = await supabase.from("stage_updates").upsert(payload, { onConflict: "project_id,stage_id" });
+    const { error } = await supabase.from("stage_updates").upsert(payload, {
+      onConflict: "project_id,stage_id",
+    });
 
     if (error) return alert(error.message);
     alert("저장 완료!");
   }
 
-  // 5) 프로젝트 추가(INSERT)
+  // 5) 프로젝트 추가
   async function addProject() {
     if (!newCode.trim()) return alert("프로젝트 코드가 필요합니다.");
     if (!newName.trim()) return alert("프로젝트명이 필요합니다.");
@@ -231,7 +269,6 @@ function addDaysISO(base: string, days: number) {
 
     setOpen(false);
 
-    // 프로젝트 목록 갱신 + 방금 추가한 프로젝트 선택
     await refreshProjects(data.id);
     alert("프로젝트가 추가되었습니다.");
   }
@@ -239,13 +276,7 @@ function addDaysISO(base: string, days: number) {
   const selected = projects.find((p) => p.id === projectId);
 
   return (
-    <div
-      style={{
-        padding: 16,
-        height: "100vh",
-        overflowY: "auto",
-      }}
-    >
+    <div style={{ padding: 16, height: "100vh", overflowY: "auto" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <h2 style={{ margin: 0 }}>입력화면 (PM용)</h2>
 
@@ -269,7 +300,7 @@ function addDaysISO(base: string, days: number) {
           ))}
         </select>
 
-        {/* 선택 프로젝트 정보(상단 표시) */}
+        {/* 선택 프로젝트 정보 */}
         {selected && (
           <div style={{ marginTop: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
             <div>
@@ -298,11 +329,11 @@ function addDaysISO(base: string, days: number) {
       <table border={1} cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr>
-            <th>단계</th>
-            <th>담당자</th>
-            <th>계획일</th>
-            <th>실적일</th>
-            <th>승인일(품질관리팀)</th>
+            <th style={{ width: 120 }}>단계</th>
+            <th style={{ width: 100 }}>담당자</th>
+            <th style={{ width: 100 }}>계획일</th>
+            <th style={{ width: 100 }}>실적일</th>
+            <th style={{ width: 100 }}>승인일(품질관리팀)</th>
             <th style={{ width: 180 }}>비고</th>
             <th style={{ width: 420 }}>메모</th>
           </tr>
@@ -315,6 +346,7 @@ function addDaysISO(base: string, days: number) {
                 {st.id}. {st.name}
               </td>
 
+              {/* 담당자 */}
               <td>
                 <input
                   style={{ width: 120 }}
@@ -324,31 +356,18 @@ function addDaysISO(base: string, days: number) {
                 />
               </td>
 
-<input
-  type="date"
-  value={rows[st.id]?.plan_date ?? ""}
-  onChange={(e) => {
-    const v = e.target.value || null;
+              {/* ✅ 계획일: 2~5 잠금 + 1번 변경 시 2~5 자동 덮어쓰기 */}
+              <td style={tdCenter}>
+                <input
+                  type="date"
+                  value={rows[st.id]?.plan_date ?? ""}
+                  disabled={["2", "3", "4", "5"].includes(st.id)}
+                  onChange={(e) => onChangePlanDate(st.id, e.target.value || null)}
+                />
+              </td>
 
-    // 1) 현재 단계 plan_date 저장
-    setField(st.id, "plan_date", v);
-
-    // 2) ✅ 1. 작업지시서(plan) 입력 시 2~5 자동 계산
-    //    ※ 단계 id가 "1","2","3","4","5" 라는 가정 (지금 화면 표기와 동일)
-    if (st.id === "1" && v) {
-      setRows((prev) => ({
-        ...prev,
-        ["1"]: { ...prev["1"], plan_date: v },
-        ["2"]: { ...prev["2"], plan_date: addDaysISO(v, 7) },
-        ["3"]: { ...prev["3"], plan_date: addDaysISO(v, 10) },
-        ["4"]: { ...prev["4"], plan_date: addDaysISO(v, 12) },
-        ["5"]: { ...prev["5"], plan_date: addDaysISO(v, 14) },
-      }));
-    }
-  }}
-/>
-
-              <td>
+              {/* 실적일 */}
+              <td style={tdCenter}>
                 <input
                   type="date"
                   value={rows[st.id]?.actual_date ?? ""}
@@ -356,7 +375,8 @@ function addDaysISO(base: string, days: number) {
                 />
               </td>
 
-              <td>
+              {/* 승인일 */}
+              <td style={tdCenter}>
                 <input
                   type="date"
                   value={rows[st.id]?.approve_date ?? ""}
@@ -365,9 +385,8 @@ function addDaysISO(base: string, days: number) {
               </td>
 
               {/* 비고 */}
-              <td style={{ verticalAlign: "top" }}>
+              <td style={tdTop}>
                 {st.id === "7-1" ? (
-                  // 7-1 CHECK SHEET
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
                     <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input
@@ -388,7 +407,6 @@ function addDaysISO(base: string, days: number) {
                     </label>
                   </div>
                 ) : st.id === "8" ? (
-                  // 8. 업체선정
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {[
                       ["vendor_assembly", "조립"],
@@ -412,13 +430,11 @@ function addDaysISO(base: string, days: number) {
               </td>
 
               {/* 메모 */}
-              <td style={{ verticalAlign: "top" }}>
+              <td style={tdTop}>
                 <textarea
                   value={rows[st.id]?.memo ?? ""}
                   onChange={(e) => {
                     setField(st.id, "memo", e.target.value);
-
-                    // 자동 높이 조절
                     e.target.style.height = "auto";
                     e.target.style.height = e.target.scrollHeight + "px";
                   }}
@@ -458,7 +474,11 @@ function addDaysISO(base: string, days: number) {
               <input value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)} />
 
               <label>설치위치</label>
-              <input value={newInstallLocation} onChange={(e) => setNewInstallLocation(e.target.value)} placeholder="예: 둔포3공장" />
+              <input
+                value={newInstallLocation}
+                onChange={(e) => setNewInstallLocation(e.target.value)}
+                placeholder="예: 둔포3공장"
+              />
 
               <label>수주일자</label>
               <input type="date" value={newOrderDate} onChange={(e) => setNewOrderDate(e.target.value)} />
