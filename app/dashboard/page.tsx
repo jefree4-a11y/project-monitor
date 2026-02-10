@@ -18,6 +18,27 @@ function getStyle(plan?: string | null, actual?: string | null, approve?: string
   const today = new Date();
   const planD = plan ? new Date(plan) : null;
 
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  tableLayout: "fixed",
+  fontSize: "10pt",   // ⭐ 글씨 크기 10pt
+};
+
+const thtd: React.CSSProperties = {
+  border: "1px solid #ccc",
+  padding: "2px 4px",   // ⭐ 여백 최소화
+  textAlign: "center",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const codeCol: React.CSSProperties = { width: 80 };
+const nameCol: React.CSSProperties = { width: 160 };
+const dateCol: React.CSSProperties = { width: 78 };   // ⭐ 날짜 칼럼 축소
+
+
   // 🟦 승인완료
   if (approve) return { background: "#5b8bd1", color: "white" };
 
@@ -60,7 +81,7 @@ export default function DashboardPage() {
   }, [updates]);
 
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: 8, zoom: 0.9 }}>
       <h2 style={{ margin: "0 0 12px" }}>대시보드 (프로젝트 단계 현황)</h2>
 
       {/* 범례 */}
@@ -75,12 +96,19 @@ export default function DashboardPage() {
 
       {/* 스크롤 컨테이너 */}
       <div style={{ overflowX: "auto", border: "1px solid #ccc" }}>
-        <table style={{ borderCollapse: "collapse", width: "max-content", minWidth: "100%" }}>
+        <table  style={{
+           borderCollapse: "collapse",
+           width: "100%",
+           tableLayout: "fixed",     // ⭐ 컬럼 자동 압축
+           fontSize: "10pt",         // ⭐ 글씨 크기 10pt
+           }}
+        >
+
           <thead>
             {/* 1행: 단계 제목(각 단계 3칸 묶기) */}
             <tr>
-              <th style={thStickyLeft(0, 120)}>프로젝트코드</th>
-              <th style={thStickyLeft(120, 220)}>프로젝트명</th>
+              <th style={thStickyLeft(0, 60)}>코드</th>
+              <th style={thStickyLeft(60,160)}>프로젝트명</th>
 
               {stages.map((s) => (
                 <th key={s.id} colSpan={3} style={thStageGroup}>
@@ -91,8 +119,8 @@ export default function DashboardPage() {
 
             {/* 2행: 계획/실적/승인 */}
             <tr>
-              <th style={thStickyLeft(0, 120)} />
-              <th style={thStickyLeft(120, 220)} />
+              <th style={thStickyLeft(0, 60)} />
+              <th style={thStickyLeft(60, 160)} />
 
               {stages.map((s) => (
                 <Fragment3 key={s.id} />
@@ -106,8 +134,17 @@ export default function DashboardPage() {
 
     return (
       <tr key={p.id}>
-        <td style={tdStickyLeft(0, 120)}>{p.project_code}</td>
-        <td style={tdStickyLeft(120, 220)}>{p.name}</td>
+        <td style={tdStickyLeft(0, 90)}>
+	  <a
+	    href={`/input?projectId=${p.id}`}
+	    style={{ color: "inherit", textDecoration: "underline", fontWeight: 700 }}
+	    title="입력화면으로 이동"
+	  >
+	    {p.project_code}
+	  </a>
+	</td>
+
+        <td style={tdStickyLeft(60, 160)}>{p.name}</td>
 
         {stages.map((s) => {
           const r = sm.get(s.id);
@@ -115,9 +152,10 @@ export default function DashboardPage() {
 
           return (
             <React.Fragment key={s.id}>
-              <td style={{ ...tdCell, ...style }}>{r?.plan_date ?? ""}</td>
-              <td style={{ ...tdCell, ...style }}>{r?.actual_date ?? ""}</td>
-              <td style={{ ...tdCell, ...style }}>{r?.approve_date ?? ""}</td>
+               <td style={{ ...tdCell, ...style }}>{fmt(r?.plan_date)}</td>
+               <td style={{ ...tdCell, ...style }}>{fmt(r?.actual_date)}</td>
+               <td style={{ ...tdCell, ...style }}>{fmt(r?.approve_date)}</td>
+
             </React.Fragment>
           );
         })}
@@ -190,38 +228,58 @@ const border = "1px solid #bbb";
 
 const thStageGroup: React.CSSProperties = {
   border,
-  padding: "8px 10px",
+  padding: "2px 4px",    // ⭐ 줄임
   background: "#f2f2f2",
   textAlign: "center",
   whiteSpace: "nowrap",
   position: "sticky",
   top: 0,
   zIndex: 2,
+  height: 30,
+  fontSize: "10pt",
+  linehught: "26px"
 };
+
+function fmt(date?: string | null) {
+  if (!date) return "";
+
+  const d = new Date(date);
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+
+  return `${yy}-${mm}-${dd}`;
+}
+
 
 const thSub: React.CSSProperties = {
   border,
-  padding: "6px 8px",
+  padding: "2px 4px",     // ⭐ 높이 줄이기
   background: "#fafafa",
   textAlign: "center",
   whiteSpace: "nowrap",
   position: "sticky",
-  top: 42, // 1행 헤더 높이만큼 아래
+  top: 30,                // ⭐ 1행 높이에 맞춤
   zIndex: 2,
+  height: 28,             // ⭐ 높이 고정 (핵심)
+  lineHeight: "24px",     // ⭐ 텍스트 중앙 정렬
 };
+
 
 const tdCell: React.CSSProperties = {
   border,
-  padding: "6px 8px",
+  padding: "2px 4px",
   textAlign: "center",
   whiteSpace: "nowrap",
-  minWidth: 90,
+  overflow: "hidden",
+  textoverflow: "ellipsis",
+  fontsize: "10pt",
 };
 
 function thStickyLeft(leftPx: number, width: number): React.CSSProperties {
   return {
     border,
-    padding: "8px 10px",
+    padding: "2px 4px",   // ⭐ 줄임
     background: "#f2f2f2",
     textAlign: "center",
     position: "sticky",
@@ -232,13 +290,16 @@ function thStickyLeft(leftPx: number, width: number): React.CSSProperties {
     maxWidth: width,
     whiteSpace: "nowrap",
     top: 0,
+    fontSize: "10pt",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   };
 }
 
 function tdStickyLeft(leftPx: number, width: number): React.CSSProperties {
   return {
     border,
-    padding: "6px 8px",
+    padding: "2px 4px",   // ⭐ 줄임
     background: "white",
     position: "sticky",
     left: leftPx,
@@ -247,5 +308,8 @@ function tdStickyLeft(leftPx: number, width: number): React.CSSProperties {
     minWidth: width,
     maxWidth: width,
     whiteSpace: "nowrap",
+    fontSize: "10pt",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   };
 }
