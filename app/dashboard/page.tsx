@@ -235,7 +235,7 @@ const thStageGroup: React.CSSProperties = {
   zIndex: 2,
   height: 30,
   fontSize: "10pt",
-  linehught: "26px"
+  linehight: "26px"
 };
 
 function fmt(date?: string | null) {
