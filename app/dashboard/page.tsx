@@ -22,20 +22,37 @@ function fmt(date?: string | null) {
   return `${yy}-${mm}-${dd}`;
 }
 
-function getStyle(plan?: string | null, actual?: string | null, approve?: string | null) {
-  const today = new Date();
-  const planD = plan ? new Date(plan) : null;
+function toISODate(d: Date) {
+  // 로컬 타임 기준 YYYY-MM-DD
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
-  // 🟦 승인완료
-  if (approve) return { background: "#5b8bd1", color: "white" };
+/** ✅ 원형 점 색상: 승인(녹색) > (오늘 vs 계획일) 노/주/빨 > 계획없음 회색 */
+function getDotColor(plan?: string | null, approve?: string | null) {
+  if (approve) return "#2e7d32"; // green
 
-  // 🟥 지체(계획일 지났는데 실적 없음)
-  if (planD && planD < today && !actual) return { background: "#ff4d4f", color: "white" };
+  if (!plan) return "#cfcfcf"; // gray
 
-  // 🟨 미승인(실적은 있는데 승인 없음)
-  if (actual && !approve) return { background: "#ffe66b" };
+  const today = toISODate(new Date()); // "YYYY-MM-DD"
+  const p = plan.slice(0, 10);
 
-  return {};
+  if (today < p) return "#ffd400"; // yellow (진행)
+  if (today === p) return "#ff9800"; // orange (경고)
+  return "#ff3b30"; // red (초과)
+}
+
+function dotStyle(color: string): React.CSSProperties {
+  return {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    background: color,
+    border: "1px solid #000",
+    display: "inline-block",
+  };
 }
 
 /** 스타일들 */
@@ -53,20 +70,6 @@ const thStageGroup: React.CSSProperties = {
   height: 30,
   fontSize: "10pt",
   lineHeight: "26px",
-};
-
-const thSub: React.CSSProperties = {
-  border,
-  padding: "2px 4px",
-  background: "#fafafa",
-  textAlign: "center",
-  whiteSpace: "nowrap",
-  position: "sticky",
-  top: 30,
-  zIndex: 2,
-  height: 28,
-  lineHeight: "24px",
-  fontSize: "10pt",
 };
 
 const tdCell: React.CSSProperties = {
@@ -117,17 +120,6 @@ function tdStickyLeft(leftPx: number, width: number): React.CSSProperties {
   };
 }
 
-/** ✅ 헤더 2행에서 3개 th를 정확히 반환 */
-function Fragment3() {
-  return (
-    <>
-      <th style={thSub}>계획</th>
-      <th style={thSub}>실적</th>
-      <th style={thSub}>승인</th>
-    </>
-  );
-}
-
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -158,6 +150,7 @@ export default function DashboardPage() {
         return;
       }
 
+      // ✅ 원형표시에는 plan/approve만 있어도 되지만, tooltip용으로 actual도 유지
       const u = await supabase
         .from("stage_updates")
         .select("project_id, stage_id, plan_date, actual_date, approve_date")
@@ -181,59 +174,47 @@ export default function DashboardPage() {
     <div style={{ padding: 8, zoom: 0.9 }}>
       <h2 style={{ margin: "0 0 12px" }}>대시보드 (프로젝트 단계 현황)</h2>
 
-      {/* ✅ 상태 필터 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span>상태:</span>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as any)}
-          style={{ padding: "4px 8px" }}
-        >
-          <option value="진행">진행</option>
-          <option value="보류">보류</option>
-          <option value="완료">완료</option>
-        </select>
-        <span style={{ color: "#666" }}>(조회 {projects.length}건)</span>
+      {/* 범례 + 입력화면 이동 + 상태필터 */}
+      <div
+        style={{
+          marginBottom: 12,
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ padding: "4px 8px", background: "#cfcfcf", borderRadius: 4 }}>미입력</span>
+        <span style={{ padding: "4px 8px", background: "#ffd400", borderRadius: 4 }}>진행</span>
+        <span style={{ padding: "4px 8px", background: "#ff9800", borderRadius: 4, fontWeight: 700 }}>경고</span>
+        <span style={{ padding: "4px 8px", background: "#ff3b30", color: "white", borderRadius: 4, fontWeight: 700 }}>
+          초과
+        </span>
+        <span style={{ padding: "4px 8px", background: "#2e7d32", color: "white", borderRadius: 4, fontWeight: 700 }}>
+          완료
+        </span>
+
+        {/* 입력화면 이동 */}
+        <a href="/input" style={{ marginLeft: 12 }}>
+          입력화면으로 이동
+        </a>
+
+        {/* 상태 필터 (오른쪽 배치) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 60 }}>
+          <span>상태:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            style={{ padding: "2px 6px" }}
+          >
+            <option value="진행">진행</option>
+            <option value="보류">보류</option>
+            <option value="완료">완료</option>
+          </select>
+
+          <span style={{ color: "#666" }}>(조회 {projects.length})</span>
+        </div>
       </div>
-
-{/* 범례 + 상태 필터 */}
-<div
-  style={{
-    marginBottom: 12,
-    display: "flex",
-    gap: 8,
-    alignItems: "center",
-    flexWrap: "wrap",
-  }}
->
-  <span style={{ padding: "4px 8px", background: "#ffe66b", borderRadius: 4 }}>미승인</span>
-  <span style={{ padding: "4px 8px", background: "#5b8bd1", color: "white", borderRadius: 4 }}>
-    승인완료
-  </span>
-  <span style={{ padding: "4px 8px", background: "#ff4d4f", color: "white", borderRadius: 4 }}>지체</span>
-
-  {/* 입력화면 이동 */}
-  <a href="/input" style={{ marginLeft: 12 }}>
-    입력화면으로 이동
-  </a>
-
-  {/* ⭐ 상태 필터 (오른쪽 배치) */}
-  <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 50 }}>
-    <span>상태:</span>
-    <select
-      value={statusFilter}
-      onChange={(e) => setStatusFilter(e.target.value as any)}
-      style={{ padding: "2px 6px" }}
-    >
-      <option value="진행">진행</option>
-      <option value="보류">보류</option>
-      <option value="완료">완료</option>
-    </select>
-
-    <span style={{ color: "#666" }}>(조회 {projects.length})</span>
-  </div>
-</div>
-
 
       {/* 스크롤 컨테이너 */}
       <div style={{ overflowX: "auto", border: "1px solid #ccc" }}>
@@ -246,24 +227,15 @@ export default function DashboardPage() {
           }}
         >
           <thead>
-            {/* 1행: 단계 제목(각 단계 3칸 묶기) */}
+            {/* ✅ 단계당 1칸만 표시 */}
             <tr>
               <th style={thStickyLeft(0, 60)}>코드</th>
               <th style={thStickyLeft(60, 160)}>프로젝트명</th>
 
               {stages.map((s) => (
-                <th key={s.id} colSpan={3} style={thStageGroup}>
+                <th key={s.id} style={thStageGroup}>
                   {s.id}. {s.name}
                 </th>
-              ))}
-            </tr>
-
-            {/* 2행: 계획/실적/승인 */}
-            <tr>
-              <th style={thStickyLeft(0, 60)} />
-              <th style={thStickyLeft(60, 160)} />
-              {stages.map((s) => (
-                <Fragment3 key={s.id} />
               ))}
             </tr>
           </thead>
@@ -288,14 +260,16 @@ export default function DashboardPage() {
 
                   {stages.map((s) => {
                     const r = sm.get(s.id);
-                    const style = getStyle(r?.plan_date, r?.actual_date, r?.approve_date);
+                    const color = getDotColor(r?.plan_date, r?.approve_date);
+
+                    const tooltip = `계획:${fmt(r?.plan_date) || "-"} / 실적:${fmt(r?.actual_date) || "-"} / 승인:${fmt(
+                      r?.approve_date
+                    ) || "-"}`;
 
                     return (
-                      <React.Fragment key={s.id}>
-                        <td style={{ ...tdCell, ...style }}>{fmt(r?.plan_date)}</td>
-                        <td style={{ ...tdCell, ...style }}>{fmt(r?.actual_date)}</td>
-                        <td style={{ ...tdCell, ...style }}>{fmt(r?.approve_date)}</td>
-                      </React.Fragment>
+                      <td key={s.id} style={{ ...tdCell, textAlign: "center" }}>
+                        <span style={dotStyle(color)} title={tooltip} />
+                      </td>
                     );
                   })}
                 </tr>
@@ -305,9 +279,7 @@ export default function DashboardPage() {
         </table>
       </div>
 
-      <p style={{ marginTop: 10, color: "#666" }}>
-        * 상태 필터 기본값은 “진행”이며, 선택한 상태의 프로젝트만 조회됩니다.
-      </p>
+      <p style={{ marginTop: 10, color: "#666" }}>* 상태 필터 기본값은 “진행”이며, 선택한 상태의 프로젝트만 조회됩니다.</p>
     </div>
   );
 }
