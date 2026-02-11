@@ -50,7 +50,7 @@ function getColor(plan?: string | null, approve?: string | null) {
   const today = toISODate(new Date());
   const p = plan.slice(0, 10);
 
-  if (today < p) return "#ffe66b";   // 진행(노랑)
+  if (today < p) return "#ffff00";   // 진행(노랑)
   if (today === p) return "#ff9800"; // 경고(주황)
   return "#ff4d4f";                  // 초과(빨강)
 }
@@ -203,7 +203,7 @@ export default function DashboardPage() {
       {/* 범례 */}
       <div style={{ marginBottom: 12, display: "flex", gap: 10 }}>
         <Legend color="#2e7d32" label="완료" />
-        <Legend color="#ffe66b" label="진행" />
+        <Legend color="#ffff00" label="진행" />
         <Legend color="#ff9800" label="경고" />
         <Legend color="#ff4d4f" label="초과" />
         <Legend color="#cfcfcf" label="미정" />
