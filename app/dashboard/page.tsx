@@ -44,7 +44,7 @@ function toISODate(d: Date) {
 */
 
 function getColor(plan?: string | null, approve?: string | null) {
-  if (approve) return "#2e7d32"; // 완료(녹색)
+  if (approve) return "#4caf50"; // 완료(녹색)
   if (!plan) return "#cfcfcf";   // 미정(회색)
 
   const today = toISODate(new Date());
@@ -202,7 +202,7 @@ export default function DashboardPage() {
 
       {/* 범례 */}
       <div style={{ marginBottom: 12, display: "flex", gap: 10 }}>
-        <Legend color="#2e7d32" label="완료" />
+        <Legend color="#4caf50" label="완료" />
         <Legend color="#ffff00" label="진행" />
         <Legend color="#ff9800" label="경고" />
         <Legend color="#ff4d4f" label="초과" />
