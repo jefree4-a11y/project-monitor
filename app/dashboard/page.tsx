@@ -243,9 +243,21 @@ export default function DashboardPage() {
                     </a>
                   </td>
 
-                  <td style={tdStickyLeft(140, 280)}>
+                  <td style={tdStickyLeft(90, 260)}>
+                    <a
+                      href={`/input?projectId=${p.id}`}
+                        style={{
+                        color: "inherit",
+                        textDecoration: "underline",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                      title="입력화면으로 이동"
+                    >
                     {p.name}
+                    </a>
                   </td>
+
 
                   {stages.map((s) => {
                     const r = sm.get(s.id);
