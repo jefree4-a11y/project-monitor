@@ -220,8 +220,8 @@ export default function DashboardPage() {
         >
           <thead>
             <tr>
-              <th style={thStickyLeft(0, 140)}>코드</th>
-              <th style={thStickyLeft(140, 280)}>프로젝트명</th>
+              <th style={thStickyLeft(0, 100)}>코드</th>
+              <th style={thStickyLeft(100, 500)}>프로젝트명</th>
 
               {stages.map((s) => (
                 <th key={s.id} style={thBase}>
