@@ -181,21 +181,14 @@ export default function InputPage() {
 
   // ✅ 1번 계획일 변경 처리 (2~5 무조건 자동 덮어쓰기 + 2~5 수동금지)
   function onChangePlanDate(stageId: string, v: string | null) {
-    // 2~5는 변경 금지
-    if (["2", "3", "4", "5"].includes(stageId)) return;
+  setRows((prev) => {
+    const next = { ...prev };
 
-    // 1번이 아니면 그냥 저장만
-    if (stageId !== "1") {
-      setField(stageId, "plan_date", v);
-      return;
-    }
+    // 현재 단계 저장
+    next[stageId] = { ...next[stageId], plan_date: v };
 
-    // 1번 저장 + 2~5 자동 덮어쓰기
-    setRows((prev) => {
-      const next = { ...prev };
-
-      next["1"] = { ...next["1"], plan_date: v };
-
+    // ⭐ 1번 변경 시에만 2~5 자동계산
+    if (stageId === "1") {
       if (v) {
         next["2"] = { ...next["2"], plan_date: addDaysISO(v, 7) };
         next["3"] = { ...next["3"], plan_date: addDaysISO(v, 10) };
@@ -207,10 +200,12 @@ export default function InputPage() {
         next["4"] = { ...next["4"], plan_date: null };
         next["5"] = { ...next["5"], plan_date: null };
       }
+    }
 
-      return next;
-    });
-  }
+    return next;
+  });
+}
+
 
   // 4) 단계 입력값 저장
   async function saveAll() {
@@ -414,7 +409,6 @@ export default function InputPage() {
                 <input
                   type="date"
                   value={rows[st.id]?.plan_date ?? ""}
-                  disabled={["2", "3", "4", "5"].includes(st.id)}
                   onChange={(e) => onChangePlanDate(st.id, e.target.value || null)}
                 />
               </td>
