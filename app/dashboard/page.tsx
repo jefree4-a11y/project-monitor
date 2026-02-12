@@ -96,7 +96,7 @@ const tdBase: React.CSSProperties = {
   border,
   textAlign: "center",
   verticalAlign: "middle",
-  height: 45,
+  height: 40,
   fontSize: "12pt",
 };
 
