@@ -49,7 +49,7 @@ function toISODate(d: Date) {
 
 const COLORS = {
   done: "#4caf50",     // 완료
-  progress: "#0000ff", // 진행(파랑)
+  progress: "#00e5ff", // 진행(파랑)
   warn: "#ff9800",     // 경고
   over: "#ff4d4f",     // 초과
   undetermined: "#cfcfcf", // 미정(회색)
@@ -223,8 +223,8 @@ export default function DashboardPage() {
         <Legend color={COLORS.progress} label="진행" />
         <Legend color={COLORS.warn} label="경고" />
         <Legend color={COLORS.over} label="초과" />
-        <Legend color={COLORS.undetermined} label="계획없음" />
         <Legend color={COLORS.missing} label="누락" />
+        <Legend color={COLORS.undetermined} label="계획없음" />
       </div>
 
       {/* 테이블 */}
