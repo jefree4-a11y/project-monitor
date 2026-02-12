@@ -23,6 +23,7 @@ type UpdateRow = {
   stage_id: string;
   plan_date: string | null;
   approve_date: string | null;
+  assignee: string | null;
 };
 
 /* ===================== 날짜 유틸 ===================== */
@@ -37,22 +38,46 @@ function toISODate(d: Date) {
 /* ===================== 색상 로직 ===================== */
 /*
 완료(승인일 있음) → 녹색
-현재 < 계획 → 노랑(진행)
+현재 < 계획 → 파랑(진행)
 현재 = 계획 → 주황(경고)
 현재 > 계획 → 빨강(초과)
-계획 없음 → 회색
+
+계획 없음:
+- assignee === 'N/A'        → 미정(회색)
+- assignee !== 'N/A'(NULL 포함) → 누락(노랑)
 */
 
-function getColor(plan?: string | null, approve?: string | null) {
-  if (approve) return "#4caf50"; // 완료(녹색)
-  if (!plan) return "#cfcfcf";   // 미정(회색)
+const COLORS = {
+  done: "#4caf50",     // 완료
+  progress: "#0000ff", // 진행(파랑)
+  warn: "#ff9800",     // 경고
+  over: "#ff4d4f",     // 초과
+  undetermined: "#cfcfcf", // 미정(회색)
+  missing: "#ffe66b",      // 누락(노랑)
+} as const;
 
+function normalizeAssignee(a?: string | null) {
+  return (a ?? "").trim();
+}
+
+function getColor(plan?: string | null, approve?: string | null, assignee?: string | null) {
+  // 1) 승인일 있으면 완료(최우선)
+  if (approve) return COLORS.done;
+
+  // 2) 계획일 없으면: 미정/누락 분기
+  if (!plan) {
+    const a = normalizeAssignee(assignee);
+    if (a === "N/A") return COLORS.undetermined; // 미정
+    return COLORS.missing; // 누락 (NULL/"" 포함해서 N/A가 아니면 모두)
+  }
+
+  // 3) 계획일 있으면 날짜 비교
   const today = toISODate(new Date());
   const p = plan.slice(0, 10);
 
-  if (today < p) return "#ffff00";   // 진행(노랑)
-  if (today === p) return "#ff9800"; // 경고(주황)
-  return "#ff4d4f";                  // 초과(빨강)
+  if (today < p) return COLORS.progress;
+  if (today === p) return COLORS.warn;
+  return COLORS.over;
 }
 
 /* ===================== 스타일 ===================== */
@@ -122,8 +147,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [updates, setUpdates] = useState<UpdateRow[]>([]);
-  const [statusFilter, setStatusFilter] =
-    useState<"진행" | "보류" | "완료">("진행");
+  const [statusFilter, setStatusFilter] = useState<"진행" | "보류" | "완료">("진행");
 
   /* ===================== 데이터 로딩 ===================== */
 
@@ -133,16 +157,12 @@ export default function DashboardPage() {
         .from("projects")
         .select("id, project_code, name, status")
         .eq("status", statusFilter)
-        .order("project_code");
+        .order("project_code"); // 필요하면 .order("project_code", { ascending: false }) 로 변경
 
       const projectList = (p.data ?? []) as Project[];
       setProjects(projectList);
 
-      const s = await supabase
-        .from("stages")
-        .select("id, name, sort_order")
-        .order("sort_order");
-
+      const s = await supabase.from("stages").select("id, name, sort_order").order("sort_order");
       setStages((s.data ?? []) as Stage[]);
 
       const ids = projectList.map((x) => x.id);
@@ -153,7 +173,7 @@ export default function DashboardPage() {
 
       const u = await supabase
         .from("stage_updates")
-        .select("project_id, stage_id, plan_date, approve_date")
+        .select("project_id, stage_id, plan_date, approve_date, assignee")
         .in("project_id", ids);
 
       setUpdates((u.data ?? []) as UpdateRow[]);
@@ -175,13 +195,10 @@ export default function DashboardPage() {
 
   return (
     <div style={{ padding: 10 }}>
+      <h2 style={{ marginBottom: 10 }}>대시보드 (프로젝트 단계 현황)</h2>
 
-      <h2 style={{ marginBottom: 10 }}>
-        대시보드 (프로젝트 단계 현황)
-      </h2>
-
-      {/* 상태 필터 + 입력 이동 */}
-      <div style={{ marginBottom: 12, display: "flex", gap: 20 }}>
+      {/* 상단: 입력 이동 + 상태필터 + 조회 */}
+      <div style={{ marginBottom: 12, display: "flex", gap: 20, alignItems: "center" }}>
         <a href="/input">입력화면으로 이동</a>
 
         <div>
@@ -201,23 +218,18 @@ export default function DashboardPage() {
       </div>
 
       {/* 범례 */}
-      <div style={{ marginBottom: 12, display: "flex", gap: 10 }}>
-        <Legend color="#4caf50" label="완료" />
-        <Legend color="#ffff00" label="진행" />
-        <Legend color="#ff9800" label="경고" />
-        <Legend color="#ff4d4f" label="초과" />
-        <Legend color="#cfcfcf" label="미정" />
+      <div style={{ marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <Legend color={COLORS.done} label="완료" />
+        <Legend color={COLORS.progress} label="진행" />
+        <Legend color={COLORS.warn} label="경고" />
+        <Legend color={COLORS.over} label="초과" />
+        <Legend color={COLORS.undetermined} label="계획없음" />
+        <Legend color={COLORS.missing} label="누락" />
       </div>
 
       {/* 테이블 */}
       <div style={{ overflowX: "auto" }}>
-        <table
-          style={{
-            borderCollapse: "collapse",
-            tableLayout: "fixed",
-            width: "100%",
-          }}
-        >
+        <table style={{ borderCollapse: "collapse", tableLayout: "fixed", width: "100%" }}>
           <thead>
             <tr>
               <th style={thStickyLeft(0, 100)}>코드</th>
@@ -233,20 +245,18 @@ export default function DashboardPage() {
 
           <tbody>
             {projects.map((p) => {
-              const sm = map.get(p.id) ?? new Map();
+              const sm = map.get(p.id) ?? new Map<string, UpdateRow>();
 
               return (
                 <tr key={p.id}>
                   <td style={tdStickyLeft(0, 140)}>
-                    <a href={`/input?projectId=${p.id}`}>
-                      {p.project_code}
-                    </a>
+                    <a href={`/input?projectId=${p.id}`}>{p.project_code}</a>
                   </td>
 
                   <td style={tdStickyLeft(90, 260)}>
                     <a
                       href={`/input?projectId=${p.id}`}
-                        style={{
+                      style={{
                         color: "inherit",
                         textDecoration: "underline",
                         fontWeight: 600,
@@ -254,17 +264,14 @@ export default function DashboardPage() {
                       }}
                       title="입력화면으로 이동"
                     >
-                    {p.name}
+                      {p.name}
                     </a>
                   </td>
 
-
                   {stages.map((s) => {
                     const r = sm.get(s.id);
-                    const color = getColor(
-                      r?.plan_date,
-                      r?.approve_date
-                    );
+
+                    const color = getColor(r?.plan_date, r?.approve_date, r?.assignee);
 
                     return (
                       <td
@@ -277,7 +284,6 @@ export default function DashboardPage() {
                           padding: 0,
                         }}
                       >
-                        {/* ⭐ 가운데 정렬 핵심 */}
                         <div
                           style={{
                             display: "flex",

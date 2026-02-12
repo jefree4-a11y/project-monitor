@@ -179,33 +179,32 @@ export default function InputPage() {
     }));
   }
 
-  // ✅ 1번 계획일 변경 처리 (2~5 무조건 자동 덮어쓰기 + 2~5 수동금지)
+  // ✅ 1번 계획일 변경 처리 (2~5 무조건 자동 덮어쓰기)
   function onChangePlanDate(stageId: string, v: string | null) {
-  setRows((prev) => {
-    const next = { ...prev };
+    setRows((prev) => {
+      const next = { ...prev };
 
-    // 현재 단계 저장
-    next[stageId] = { ...next[stageId], plan_date: v };
+      // 현재 단계 저장
+      next[stageId] = { ...next[stageId], plan_date: v };
 
-    // ⭐ 1번 변경 시에만 2~5 자동계산
-    if (stageId === "1") {
-      if (v) {
-        next["2"] = { ...next["2"], plan_date: addDaysISO(v, 7) };
-        next["3"] = { ...next["3"], plan_date: addDaysISO(v, 10) };
-        next["4"] = { ...next["4"], plan_date: addDaysISO(v, 12) };
-        next["5"] = { ...next["5"], plan_date: addDaysISO(v, 14) };
-      } else {
-        next["2"] = { ...next["2"], plan_date: null };
-        next["3"] = { ...next["3"], plan_date: null };
-        next["4"] = { ...next["4"], plan_date: null };
-        next["5"] = { ...next["5"], plan_date: null };
+      // 1번 변경 시에만 2~5 자동계산
+      if (stageId === "1") {
+        if (v) {
+          next["2"] = { ...next["2"], plan_date: addDaysISO(v, 7) };
+          next["3"] = { ...next["3"], plan_date: addDaysISO(v, 10) };
+          next["4"] = { ...next["4"], plan_date: addDaysISO(v, 12) };
+          next["5"] = { ...next["5"], plan_date: addDaysISO(v, 14) };
+        } else {
+          next["2"] = { ...next["2"], plan_date: null };
+          next["3"] = { ...next["3"], plan_date: null };
+          next["4"] = { ...next["4"], plan_date: null };
+          next["5"] = { ...next["5"], plan_date: null };
+        }
       }
-    }
 
-    return next;
-  });
-}
-
+      return next;
+    });
+  }
 
   // 4) 단계 입력값 저장
   async function saveAll() {
@@ -378,7 +377,7 @@ export default function InputPage() {
         <thead>
           <tr>
             <th style={{ width: 120 }}>단계</th>
-            <th style={{ width: 100 }}>담당자</th>
+            <th style={{ width: 60, textAlign: "center" }}>담당자</th>
             <th style={{ width: 110 }}>계획일</th>
             <th style={{ width: 110 }}>실적일</th>
             <th style={{ width: 150 }}>승인일(품질관리팀)</th>
@@ -394,13 +393,13 @@ export default function InputPage() {
                 {st.id}. {st.name}
               </td>
 
-              {/* 담당자 */}
-              <td>
+              {/* ✅ 담당자: td 자체를 가운데 정렬 */}
+              <td style={tdCenter}>
                 <input
-                  style={{ width: 120 }}
+                  style={{ width: 60, textAlign: "center" }}
                   value={rows[st.id]?.assignee ?? ""}
                   onChange={(e) => setField(st.id, "assignee", e.target.value)}
-                  placeholder="담당자"
+                  placeholder=""
                 />
               </td>
 
