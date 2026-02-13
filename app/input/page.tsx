@@ -539,7 +539,7 @@ export default function InputPage() {
                 <option value="완료">완료</option>
               </select>
 
-              <label>PM 이메일</label>
+              <label>PM </label>
               <input value={newPmEmail} onChange={(e) => setNewPmEmail(e.target.value)} placeholder="pm@company.com" />
             </div>
 
@@ -588,7 +588,7 @@ export default function InputPage() {
                 <option value="완료">완료</option>
               </select>
 
-              <label>PM 이메일</label>
+              <label>PM </label>
               <input value={editPmEmail} onChange={(e) => setEditPmEmail(e.target.value)} />
             </div>
 
