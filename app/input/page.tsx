@@ -540,7 +540,7 @@ export default function InputPage() {
               </select>
 
               <label>PM </label>
-              <input value={newPmEmail} onChange={(e) => setNewPmEmail(e.target.value)} placeholder="pm@company.com" />
+              <input value={newPmEmail} onChange={(e) => setNewPmEmail(e.target.value)} placeholder="" />
             </div>
 
             <div style={{ marginTop: 14, display: "flex", gap: 8, justifyContent: "flex-end" }}>
