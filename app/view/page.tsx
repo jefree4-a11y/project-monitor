@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -81,9 +81,9 @@ function buildBaseRow(projectId: string, stageId: string): Update {
   };
 }
 
-/* ===================== 메인 ===================== */
+/* ===================== 실제 페이지 내용 ===================== */
 
-export default function ViewPage() {
+function ViewInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const projectId = sp.get("projectId") ?? "";
@@ -101,13 +101,11 @@ export default function ViewPage() {
     return list;
   }, [stages]);
 
-  // 담당자 박스는 stage_updates의 "첫 단계" 값을 사용
   const ownerStageId = useMemo(() => {
     if (!stagesSorted.length) return "";
     return stagesSorted[0].id;
   }, [stagesSorted]);
 
-  // owner 표시용 (A/B 자동 판별)
   const ownerViewRows: OwnerRow[] = useMemo(() => {
     if (!ownerStageId) return [];
     const r = rows[ownerStageId];
@@ -135,8 +133,6 @@ export default function ViewPage() {
     ];
   }, [rows, ownerStageId]);
 
-  /* ===================== 데이터 로딩 ===================== */
-
   useEffect(() => {
     if (!projectId) {
       setLoading(false);
@@ -148,7 +144,6 @@ export default function ViewPage() {
       setErrorMsg(null);
 
       try {
-        // 1) project
         const p = await supabase
           .from("projects")
           .select("id, project_code, name, customer, install_location, order_date, due_date, status, pm_email")
@@ -157,11 +152,9 @@ export default function ViewPage() {
 
         setProject((p.data as Project) ?? null);
 
-        // 2) stages
         const s = await supabase.from("stages").select("id, name, sort_order").order("sort_order");
         setStages((s.data ?? []) as Stage[]);
 
-        // 3) stage_updates
         const u = await supabase
           .from("stage_updates")
           .select(
@@ -179,7 +172,6 @@ export default function ViewPage() {
 
         if (u.error) throw u.error;
 
-        // base rows
         const stageList = (s.data ?? []) as Stage[];
         const sorted = [...stageList].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
@@ -201,8 +193,6 @@ export default function ViewPage() {
     })();
   }, [projectId]);
 
-  /* ===================== 수정 버튼 ===================== */
-
   async function goEdit() {
     if (!projectId) return;
 
@@ -221,9 +211,7 @@ export default function ViewPage() {
     return (
       <div style={{ padding: 16 }}>
         <h2>프로젝트 단계별 현황 (조회)</h2>
-        <div style={{ marginTop: 8, color: "#666" }}>
-          projectId가 없습니다. 대시보드에서 프로젝트를 선택해 주세요.
-        </div>
+        <div style={{ marginTop: 8, color: "#666" }}>projectId가 없습니다. 대시보드에서 프로젝트를 선택해 주세요.</div>
         <div style={{ marginTop: 12 }}>
           <a href="/dashboard">대시보드로 이동</a>
         </div>
@@ -233,7 +221,6 @@ export default function ViewPage() {
 
   return (
     <div style={{ padding: 16 }}>
-      {/* 상단 헤더 */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
           <h2 style={{ margin: 0 }}>프로젝트 단계별 현황 (조회 전용)</h2>
@@ -263,7 +250,6 @@ export default function ViewPage() {
               cursor: "pointer",
               fontWeight: 800,
             }}
-            title="로그인 후 입력(수정) 화면으로 이동"
           >
             수정
           </button>
@@ -271,7 +257,6 @@ export default function ViewPage() {
         </div>
       </div>
 
-      {/* 프로젝트 정보 */}
       {project && (
         <div
           style={{
@@ -306,11 +291,10 @@ export default function ViewPage() {
             </div>
           </div>
 
-          {/* 담당자 조회 */}
           <div style={{ display: "flex", justifyContent: "center" }}>
             <div style={{ width: 520 }}>
               <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-                <b style={{ fontSize: 15 }}>담당자 현황(조회)</b>
+                <b style={{ fontSize: 13 }}>담당자 현황(조회)</b>
               </div>
 
               <div style={{ border: "1px solid #d0d7de", borderRadius: 6, overflow: "hidden" }}>
@@ -355,7 +339,6 @@ export default function ViewPage() {
         </div>
       )}
 
-      {/* 단계 조회 테이블 */}
       <div style={{ marginTop: 14 }}>
         <table border={1} cellPadding={4} style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
           <thead>
@@ -410,6 +393,16 @@ export default function ViewPage() {
         </table>
       </div>
     </div>
+  );
+}
+
+/* ===================== Suspense Wrapper ===================== */
+
+export default function ViewPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 16 }}>로딩중...</div>}>
+      <ViewInner />
+    </Suspense>
   );
 }
 
