@@ -1,13 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-
-type Profile = {
-  email: string | null;
-  full_name: string | null;
-  approved: boolean;
-};
 
 type Project = {
   id: string;
@@ -23,13 +17,7 @@ type Project = {
 
 type Stage = { id: string; name: string; sort_order: number };
 
-type OwnerMode = "B_ONE_ROW" | "A_MULTI_ROW";
-type RoleKey = "pm" | "design" | "mech" | "control" | "safety";
-type OwnerRow = Record<RoleKey, string>;
-const emptyOwnerRow: OwnerRow = { pm: "", design: "", mech: "", control: "", safety: "" };
-
 type Update = {
-  id: string | null; // ✅ id(UUID) 기준 저장/수정
   project_id: string;
   stage_id: string;
   assignee: string | null;
@@ -46,14 +34,6 @@ type Update = {
   vendor_program: string | null;
 
   memo: string | null;
-
-  // ✅ 빨간 박스 저장용 컬럼들 (stage_updates에 추가 필요)
-  owner_pm?: string | null;
-  owner_design?: string | null;
-  owner_mech?: string | null;
-  owner_control?: string | null;
-  owner_safety?: string | null;
-  owner_matrix?: any | null; // jsonb
 };
 
 function addDaysISO(base: string, days: number) {
@@ -66,11 +46,6 @@ function addDaysISO(base: string, days: number) {
 }
 
 export default function InputPage() {
-  // ✅ 로그인 사용자 표시용
-  const [email, setEmail] = useState<string | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-
-  // 기존 상태들
   const [projects, setProjects] = useState<Project[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [projectId, setProjectId] = useState<string>("");
@@ -103,66 +78,9 @@ export default function InputPage() {
   const [editStatus, setEditStatus] = useState<"진행" | "보류" | "완료">("진행");
   const [editPmEmail, setEditPmEmail] = useState("");
 
-  // 로그아웃 처리중 표시(중복 클릭 방지)
-  const [loggingOut, setLoggingOut] = useState(false);
-
-  // ✅ 빨간 박스 입력 상태(A/B)
-  const [ownerMode, setOwnerMode] = useState<OwnerMode>("B_ONE_ROW");
-  const [ownerOne, setOwnerOne] = useState<OwnerRow>({ ...emptyOwnerRow });
-  const [ownerRows, setOwnerRows] = useState<OwnerRow[]>(Array.from({ length: 5 }, () => ({ ...emptyOwnerRow })));
-
-  const ownerCurrentRows = useMemo(
-    () => (ownerMode === "B_ONE_ROW" ? [ownerOne] : ownerRows),
-    [ownerMode, ownerOne, ownerRows]
-  );
-
   // 공통 TD 스타일(정렬 깨짐 방지)
   const tdCenter: React.CSSProperties = { verticalAlign: "middle", textAlign: "center" };
   const tdTop: React.CSSProperties = { verticalAlign: "top" };
-
-  // ✅ 로그아웃: /dashboard 로 이동
-  async function handleLogout() {
-    try {
-      setLoggingOut(true);
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error("signOut error:", error);
-        alert("로그아웃 실패: " + error.message);
-        return;
-      }
-      window.location.href = "/dashboard";
-    } finally {
-      setLoggingOut(false);
-    }
-  }
-
-  // ✅ 0) 로그인 사용자 정보 로드
-  useEffect(() => {
-    const run = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) console.error("getUser error:", error);
-
-      const user = data.user;
-      setEmail(user?.email ?? null);
-
-      if (user) {
-        const { data: p, error: pErr } = await supabase
-          .from("profiles")
-          .select("email, full_name, approved")
-          .eq("id", user.id)
-          .single();
-
-        if (pErr) {
-          console.warn("profiles select error:", pErr);
-          setProfile(null);
-        } else {
-          setProfile((p as Profile) ?? null);
-        }
-      }
-    };
-
-    run();
-  }, []);
 
   // 1) 프로젝트 목록 갱신
   async function refreshProjects(selectId?: string) {
@@ -170,12 +88,6 @@ export default function InputPage() {
       .from("projects")
       .select("id, project_code, name, customer, install_location, order_date, due_date, status, pm_email")
       .order("project_code");
-
-    if (p.error) {
-      console.error("projects error:", p.error);
-      alert("projects error: " + p.error.message);
-      return;
-    }
 
     const list = (p.data ?? []) as Project[];
     setProjects(list);
@@ -185,11 +97,13 @@ export default function InputPage() {
       return;
     }
 
+    // URL에서 넘어온 프로젝트가 있으면 우선 선택
     if (urlProjectId) {
       setProjectId(urlProjectId);
       return;
     }
 
+    // URL이 없으면 첫 프로젝트 자동 선택
     if (!projectId && list.length > 0) {
       setProjectId(list[0].id);
     }
@@ -207,24 +121,10 @@ export default function InputPage() {
       await refreshProjects(urlProjectId || undefined);
 
       const s = await supabase.from("stages").select("id, name, sort_order").order("sort_order");
-
-      if (s.error) {
-        console.error("stages error:", s.error);
-        alert("stages error: " + s.error.message);
-        return;
-      }
-
       setStages((s.data ?? []) as Stage[]);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlProjectId]);
-
-  // ✅ 빨간 박스 저장에 사용할 “대표 stage_id” (가장 앞 단계 1개)
-  const ownerStageId = useMemo(() => {
-    if (!stages || stages.length === 0) return "";
-    // stages는 sort_order로 이미 정렬되어 들어옴
-    return stages[0].id;
-  }, [stages]);
 
   // 3) 프로젝트 선택 시 stage_updates 불러오기
   useEffect(() => {
@@ -235,28 +135,19 @@ export default function InputPage() {
         .from("stage_updates")
         .select(
           `
-          id,
           project_id, stage_id, assignee,
           plan_date, actual_date, approve_date,
           remark_design_work, remark_outsource_design,
           vendor_assembly, vendor_install, vendor_control, vendor_program,
-          memo,
-          owner_pm, owner_design, owner_mech, owner_control, owner_safety, owner_matrix
+          memo
         `
         )
         .eq("project_id", projectId);
-
-      if (u.error) {
-        console.error("stage_updates error:", u.error);
-        alert("stage_updates error: " + u.error.message);
-        return;
-      }
 
       // 기본 틀 생성
       const base: Record<string, Update> = {};
       for (const st of stages) {
         base[st.id] = {
-          id: null,
           project_id: projectId,
           stage_id: st.id,
           assignee: null,
@@ -270,59 +161,16 @@ export default function InputPage() {
           vendor_control: null,
           vendor_program: null,
           memo: null,
-          owner_pm: null,
-          owner_design: null,
-          owner_mech: null,
-          owner_control: null,
-          owner_safety: null,
-          owner_matrix: null,
         };
       }
 
-      for (const item of (u.data ?? []) as any[]) {
-        const stId = item.stage_id as string;
-        base[stId] = {
-          ...base[stId],
-          ...item,
-          id: item.id ?? null,
-        };
+      for (const item of (u.data ?? []) as Update[]) {
+        base[item.stage_id] = item;
       }
 
       setRows(base);
-
-      // ✅ 대표 stage(ownerStageId)의 저장값으로 빨간 박스 초기화
-      const ownerRow = ownerStageId ? base[ownerStageId] : null;
-      if (ownerRow) {
-        const matrix = ownerRow.owner_matrix;
-        if (Array.isArray(matrix) && matrix.length > 0) {
-          setOwnerMode("A_MULTI_ROW");
-          setOwnerRows(
-            matrix.map((r: any) => ({
-              pm: r?.pm ?? "",
-              design: r?.design ?? "",
-              mech: r?.mech ?? "",
-              control: r?.control ?? "",
-              safety: r?.safety ?? "",
-            }))
-          );
-        } else {
-          setOwnerMode("B_ONE_ROW");
-          setOwnerOne({
-            pm: (ownerRow.owner_pm ?? "") as string,
-            design: (ownerRow.owner_design ?? "") as string,
-            mech: (ownerRow.owner_mech ?? "") as string,
-            control: (ownerRow.owner_control ?? "") as string,
-            safety: (ownerRow.owner_safety ?? "") as string,
-          });
-        }
-      } else {
-        // stages는 있는데 ownerStageId가 비정상일 때 대비
-        setOwnerMode("B_ONE_ROW");
-        setOwnerOne({ ...emptyOwnerRow });
-        setOwnerRows(Array.from({ length: 5 }, () => ({ ...emptyOwnerRow })));
-      }
     })();
-  }, [projectId, stages, ownerStageId]);
+  }, [projectId, stages]);
 
   function setField(stageId: string, key: keyof Update, value: any) {
     setRows((prev) => ({
@@ -336,8 +184,10 @@ export default function InputPage() {
     setRows((prev) => {
       const next = { ...prev };
 
+      // 현재 단계 저장
       next[stageId] = { ...next[stageId], plan_date: v };
 
+      // 1번 변경 시에만 2~5 자동계산
       if (stageId === "1") {
         if (v) {
           next["2"] = { ...next["2"], plan_date: addDaysISO(v, 7) };
@@ -356,111 +206,35 @@ export default function InputPage() {
     });
   }
 
-  // ✅ 빨간박스 입력 핸들러
-  const updateOwnerCell = (rIdx: number, key: RoleKey, value: string) => {
-    if (ownerMode === "B_ONE_ROW") {
-      setOwnerOne((prev) => ({ ...prev, [key]: value }));
-      return;
-    }
-    setOwnerRows((prev) => {
-      const next = [...prev];
-      next[rIdx] = { ...next[rIdx], [key]: value };
-      return next;
-    });
-  };
-  const addOwnerRow = () => setOwnerRows((prev) => [...prev, { ...emptyOwnerRow }]);
-  const removeOwnerRow = (rIdx: number) => setOwnerRows((prev) => prev.filter((_, i) => i !== rIdx));
-
-  // ✅ (중요) 빨간 박스 상태를 rows[ownerStageId]에 반영
-  function applyOwnerBoxToRows(current: Record<string, Update>) {
-    if (!ownerStageId) return current; // stages 없을 때 방어
-    const next = { ...current };
-    const target = next[ownerStageId];
-    if (!target) return current;
-
-    if (ownerMode === "B_ONE_ROW") {
-      next[ownerStageId] = {
-        ...target,
-        owner_pm: ownerOne.pm || null,
-        owner_design: ownerOne.design || null,
-        owner_mech: ownerOne.mech || null,
-        owner_control: ownerOne.control || null,
-        owner_safety: ownerOne.safety || null,
-        owner_matrix: null,
-      };
-    } else {
-      const m = ownerRows;
-      next[ownerStageId] = {
-        ...target,
-        owner_matrix: m,
-        // 검색/표시 편의: 첫 줄을 5컬럼에도 미러링
-        owner_pm: m[0]?.pm || null,
-        owner_design: m[0]?.design || null,
-        owner_mech: m[0]?.mech || null,
-        owner_control: m[0]?.control || null,
-        owner_safety: m[0]?.safety || null,
-      };
-    }
-    return next;
-  }
-
-  // 4) 단계 입력값 저장 (✅ id(UUID) 기준으로 insert/update)
+  // 4) 단계 입력값 저장
   async function saveAll() {
     if (!projectId) return alert("프로젝트를 먼저 선택하세요.");
-    if (!stages || stages.length === 0) return alert("단계(stages)가 없습니다.");
 
-    // ✅ 먼저 빨간 박스 값을 rows에 반영
-    const mergedRows = applyOwnerBoxToRows(rows);
+    const payload = Object.values(rows).map((r) => ({
+      project_id: projectId,
+      stage_id: r.stage_id,
+      assignee: r.assignee || null,
+      plan_date: r.plan_date || null,
+      actual_date: r.actual_date || null,
+      approve_date: r.approve_date || null,
 
-    // ✅ 저장(각 stage별로 id 있으면 update, 없으면 insert)
-    // - 성능보다 안정/가독 우선(프로젝트당 stage 수 적으니 OK)
-    const nextRows: Record<string, Update> = { ...mergedRows };
+      remark_design_work: !!r.remark_design_work,
+      remark_outsource_design: !!r.remark_outsource_design,
 
-    for (const st of stages) {
-      const r = mergedRows[st.id];
-      if (!r) continue;
+      vendor_assembly: r.vendor_assembly || null,
+      vendor_install: r.vendor_install || null,
+      vendor_control: r.vendor_control || null,
+      vendor_program: r.vendor_program || null,
 
-      const payload: any = {
-        project_id: projectId,
-        stage_id: r.stage_id,
-        assignee: r.assignee || null,
-        plan_date: r.plan_date || null,
-        actual_date: r.actual_date || null,
-        approve_date: r.approve_date || null,
+      memo: r.memo || null,
+      updated_at: new Date().toISOString(),
+    }));
 
-        remark_design_work: !!r.remark_design_work,
-        remark_outsource_design: !!r.remark_outsource_design,
+    const { error } = await supabase.from("stage_updates").upsert(payload, {
+      onConflict: "project_id,stage_id",
+    });
 
-        vendor_assembly: r.vendor_assembly || null,
-        vendor_install: r.vendor_install || null,
-        vendor_control: r.vendor_control || null,
-        vendor_program: r.vendor_program || null,
-
-        memo: r.memo || null,
-        updated_at: new Date().toISOString(),
-
-        // ✅ 빨간 박스 컬럼(대표 stage에만 값이 들어가고 나머지는 null일 수 있음)
-        owner_pm: r.owner_pm ?? null,
-        owner_design: r.owner_design ?? null,
-        owner_mech: r.owner_mech ?? null,
-        owner_control: r.owner_control ?? null,
-        owner_safety: r.owner_safety ?? null,
-        owner_matrix: r.owner_matrix ?? null,
-      };
-
-      if (r.id) {
-        const { error } = await supabase.from("stage_updates").update(payload).eq("id", r.id);
-        if (error) return alert(`저장 실패(stage ${st.id}): ${error.message}`);
-      } else {
-        const { data, error } = await supabase.from("stage_updates").insert([payload]).select("id").single();
-        if (error) return alert(`저장 실패(stage ${st.id}): ${error.message}`);
-
-        // 새로 생성된 id 반영
-        nextRows[st.id] = { ...nextRows[st.id], id: (data as any)?.id ?? null };
-      }
-    }
-
-    setRows(nextRows);
+    if (error) return alert(error.message);
     alert("저장 완료!");
   }
 
@@ -488,6 +262,7 @@ export default function InputPage() {
 
     if (error) return alert(error.message);
 
+    // 폼 초기화
     setNewCode("");
     setNewName("");
     setNewCustomer("");
@@ -499,13 +274,13 @@ export default function InputPage() {
 
     setOpen(false);
 
-    await refreshProjects((data as any).id);
+    await refreshProjects(data.id);
     alert("프로젝트가 추가되었습니다.");
   }
 
   const selected = projects.find((p) => p.id === projectId);
 
-  // 수정 모달 열 때 자동으로 값 채우기
+  // 수정 모달 열 때 자동으로 값 채우기(선택 변경 시도 반영)
   useEffect(() => {
     if (!selected) return;
 
@@ -546,60 +321,22 @@ export default function InputPage() {
 
   return (
     <div style={{ padding: 16, height: "100vh", overflowY: "auto" }}>
-      {/* ===== 상단 헤더 ===== */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <h2 style={{ margin: 0 }}>프로젝트추가</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <h2 style={{ margin: 0 }}>입력화면 (PM용)</h2>
 
-        {/* 오른쪽 영역: 사용자정보(버튼 위) + 버튼 */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-          {/* ✅ 버튼 위에 사용자 정보 한 줄 + 로그아웃 버튼(승인됨 오른쪽) */}
-          <div
-            style={{
-              fontSize: 13,
-              opacity: 0.85,
-              whiteSpace: "nowrap",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <span>
-              로그인: <b>{profile?.full_name ?? profile?.email ?? email ?? "알 수 없음"}</b>
-              {"  |  "}
-              승인: <b>{profile ? (profile.approved ? "승인됨" : "미승인") : "-"}</b>
-            </span>
-
-            <button
-              onClick={handleLogout}
-              disabled={loggingOut}
-              style={{
-                padding: "3px 10px",
-                border: "1px solid #ccc",
-                borderRadius: 4,
-                background: loggingOut ? "#eee" : "#f5f5f5",
-                cursor: loggingOut ? "not-allowed" : "pointer",
-              }}
-              title="로그아웃"
-            >
-              {loggingOut ? "로그아웃..." : "로그아웃"}
-            </button>
-          </div>
-
-          {/* 버튼 영역 */}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setOpen(true)}>+ 프로젝트 추가</button>
-            <button onClick={() => setEditOpen(true)} disabled={!selected}>
-              ✎ 프로젝트 수정
-            </button>
-            <button onClick={saveAll}>전체 저장</button>
-            <a href="/dashboard" style={{ alignSelf: "center" }}>
-              대시보드
-            </a>
-          </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setOpen(true)}>+ 프로젝트 추가</button>
+          <button onClick={() => setEditOpen(true)} disabled={!selected}>
+            ✎ 프로젝트 수정
+          </button>
+          <button onClick={saveAll}>전체 저장</button>
+          <a href="/dashboard" style={{ alignSelf: "center" }}>
+            대시보드
+          </a>
         </div>
       </div>
 
-      {/* ===== 프로젝트 선택 ===== */}
+      {/* 프로젝트 선택 */}
       <div style={{ marginTop: 12, marginBottom: 12 }}>
         <label>프로젝트 선택: </label>
         <select value={projectId} onChange={(e) => setProjectId(e.target.value)} style={{ marginLeft: 8 }}>
@@ -611,121 +348,32 @@ export default function InputPage() {
         </select>
 
         {/* 선택 프로젝트 정보 */}
-{selected && (
-  <div
-    style={{
-      marginTop: 10,
-      padding: 10,
-      border: "1px solid #ddd",
-      borderRadius: 6,
-      display: "grid",
-      gridTemplateColumns: "1fr 520px",
-      gap: 16,
-      alignItems: "start",
-    }}
-  >
-    {/* 왼쪽: 프로젝트 정보 */}
-    <div>
-      <div>
-        <b>고객사</b>: {selected.customer ?? "-"}
-      </div>
-      <div>
-        <b>설치위치</b>: {selected.install_location ?? "-"}
-      </div>
-      <div>
-        <b>수주일자</b>: {selected.order_date ?? "-"}
-      </div>
-      <div>
-        <b>납기일</b>: {selected.due_date ?? "-"}
-      </div>
-      <div>
-        <b>상태</b>: {selected.status}
-      </div>
-      <div>
-        <b>PM</b>: {selected.pm_email ?? "-"}
-      </div>
-    </div>
-
-    {/* 오른쪽: 담당자 입력(기존 빨간 박스 블록을 여기로 이동) */}
-    <div style={{ width: 520 }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
-        <b style={{ fontSize: 13 }}>담당자 입력</b>
-
-        <label style={radioLabel}>
-          <input
-            type="radio"
-            name="ownerMode"
-            checked={ownerMode === "B_ONE_ROW"}
-            onChange={() => setOwnerMode("B_ONE_ROW")}
-          />
-          B(1행)
-        </label>
-
-        <label style={radioLabel}>
-          <input
-            type="radio"
-            name="ownerMode"
-            checked={ownerMode === "A_MULTI_ROW"}
-            onChange={() => setOwnerMode("A_MULTI_ROW")}
-          />
-          A(여러줄)
-        </label>
-
-        {ownerMode === "A_MULTI_ROW" && (
-          <button type="button" onClick={addOwnerRow} style={btnStyle}>
-            + 행 추가
-          </button>
+        {selected && (
+          <div style={{ marginTop: 10, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
+            <div>
+              <b>고객사</b>: {selected.customer ?? "-"}
+            </div>
+            <div>
+              <b>설치위치</b>: {selected.install_location ?? "-"}
+            </div>
+            <div>
+              <b>수주일자</b>: {selected.order_date ?? "-"}
+            </div>
+            <div>
+              <b>납기일</b>: {selected.due_date ?? "-"}
+            </div>
+            <div>
+              <b>상태</b>: {selected.status}
+            </div>
+            <div>
+              <b>PM</b>: {selected.pm_email ?? "-"}
+            </div>
+          </div>
         )}
       </div>
 
-      <div style={{ border: "1px solid #d0d7de", borderRadius: 6, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-          <thead>
-            <tr>
-              {["PM", "설계", "기계", "제어", "안전"].map((h) => (
-                <th key={h} style={thStyle}>
-                  {h}
-                </th>
-              ))}
-              {ownerMode === "A_MULTI_ROW" ? <th style={thStyle}></th> : null}
-            </tr>
-          </thead>
-
-          <tbody>
-            {ownerCurrentRows.map((row, rIdx) => (
-              <tr key={rIdx}>
-                {(["pm", "design", "mech", "control", "safety"] as RoleKey[]).map((k) => (
-                  <td key={k} style={ownerTdStyle}>
-                    <input
-                      value={row[k]}
-                      onChange={(e) => updateOwnerCell(rIdx, k, e.target.value)}
-                      style={ownerInputStyle}
-                      placeholder=""
-                    />
-                  </td>
-                ))}
-
-                {ownerMode === "A_MULTI_ROW" ? (
-                  <td style={{ ...ownerTdStyle, width: 44 }}>
-                    <button type="button" onClick={() => removeOwnerRow(rIdx)} style={iconBtnStyle}>
-                      ✕
-                    </button>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      
-    </div>
-  </div>
-)}
-      </div>
-
-      {/* ===== 단계 입력 테이블 ===== */}
-      <table border={1} cellPadding={4} style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+      {/* 단계 입력 테이블 */}
+      <table border={1} cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr>
             <th style={{ width: 120 }}>단계</th>
@@ -745,7 +393,7 @@ export default function InputPage() {
                 {st.id}. {st.name}
               </td>
 
-              {/* 담당자 */}
+              {/* ✅ 담당자: td 자체를 가운데 정렬 */}
               <td style={tdCenter}>
                 <input
                   style={{ width: 60, textAlign: "center" }}
@@ -975,49 +623,4 @@ const modal: React.CSSProperties = {
   borderRadius: 10,
   padding: 16,
   boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
-};
-
-const radioLabel: React.CSSProperties = { display: "flex", gap: 6, alignItems: "center", fontSize: 12 };
-
-const btnStyle: React.CSSProperties = {
-  border: "1px solid #cbd5e1",
-  background: "white",
-  padding: "4px 8px",
-  borderRadius: 6,
-  fontSize: 12,
-  cursor: "pointer",
-};
-
-const iconBtnStyle: React.CSSProperties = {
-  width: 32,
-  height: 26,
-  border: "1px solid #cbd5e1",
-  background: "white",
-  borderRadius: 6,
-  cursor: "pointer",
-};
-
-const thStyle: React.CSSProperties = {
-  background: "#3b82f6",
-  color: "white",
-  fontSize: 12,
-  padding: "6px 8px",
-  textAlign: "center",
-};
-
-const ownerTdStyle: React.CSSProperties = {
-  borderTop: "1px solid #e5e7eb",
-  borderRight: "1px solid #e5e7eb",
-  padding: 4,
-  background: "#f8fafc",
-};
-
-const ownerInputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 26,
-  border: "1px solid #cbd5e1",
-  borderRadius: 4,
-  padding: "0 8px",
-  fontSize: 12,
-  background: "white",
 };
