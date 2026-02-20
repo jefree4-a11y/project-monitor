@@ -169,9 +169,7 @@ function LoginInner() {
           </button>
         </div>
 
-        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
-          로그인 성공 후 이동: <code>{redirectTo}</code>
-        </div>
+
       </div>
     </div>
   );
