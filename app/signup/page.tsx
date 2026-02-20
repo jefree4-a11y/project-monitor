@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -11,11 +11,11 @@ function sanitizeRedirect(path: string | null) {
   return path;
 }
 
-export default function SignupPage() {
+function SignupInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // ✅ login과 동일: redirectTo 우선, 호환용 next도 허용
+  // ✅ login과 동일: redirectTo 우선, next도 호환
   const redirectTo = useMemo(() => {
     const r = sp.get("redirectTo") || sp.get("next");
     return sanitizeRedirect(r);
@@ -37,7 +37,6 @@ export default function SignupPage() {
     try {
       setLoading(true);
 
-      // ✅ metadata에 full_name 저장 (나중에 로그인 후 프로필 생성에 사용 가능)
       const { data, error } = await supabase.auth.signUp({
         email: em,
         password,
@@ -48,15 +47,14 @@ export default function SignupPage() {
 
       if (error) return alert("회원가입 실패: " + error.message);
 
-      // ✅ 이메일 인증이 켜져 있으면 session이 null일 수 있음
-      // 이 상태에서는 RLS 때문에 profiles insert/upsert가 실패할 수 있으니 여기서 DB 쓰기 하지 않음
+      // ✅ 이메일 인증 켜져 있으면 세션이 null일 수 있음 (DB 쓰기 X)
       if (!data.session) {
         alert("회원가입이 완료되었습니다. 이메일 인증 후 로그인해주세요.");
         router.replace(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
         return;
       }
 
-      // (이메일 인증이 꺼져 있어서 session이 바로 생기는 경우에만) profiles upsert
+      // (인증이 꺼져 있어 세션이 즉시 생기는 경우에만) profiles upsert
       const userId = data.user?.id;
       if (userId) {
         const { error: pErr } = await supabase.from("profiles").upsert(
@@ -131,5 +129,13 @@ export default function SignupPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>로딩중...</div>}>
+      <SignupInner />
+    </Suspense>
   );
 }
