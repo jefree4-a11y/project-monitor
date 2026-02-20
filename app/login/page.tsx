@@ -1,21 +1,19 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 function sanitizeRedirect(path: string | null) {
-  // 보안: 외부 URL로 리다이렉트 방지
   if (!path) return "/dashboard";
   if (!path.startsWith("/")) return "/dashboard";
   return path;
 }
 
-export default function LoginPage() {
+function LoginInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
-  // ✅ proxy.ts에서 redirectTo를 쓰고, 예전 호환용으로 next도 같이 지원
   const redirectTo = useMemo(() => {
     const r = sp.get("redirectTo") || sp.get("next");
     return sanitizeRedirect(r);
@@ -25,10 +23,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ✅ 이메일 인증 대기 UI
   const [needConfirm, setNeedConfirm] = useState(false);
-
-  // ✅ 재발송 쿨타임
   const [cooldown, setCooldown] = useState(0);
 
   const emailTrim = useMemo(() => email.trim(), [email]);
@@ -76,7 +71,6 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ 로그인 성공: 원래 가려던 곳으로
       router.replace(redirectTo);
     } finally {
       setLoading(false);
@@ -113,10 +107,7 @@ export default function LoginPage() {
     }
   };
 
-  const goSignup = () => {
-    // 회원가입 후에도 돌아오게 하고 싶으면 redirectTo를 같이 넘김
-    router.push(`/signup?redirectTo=${encodeURIComponent(redirectTo)}`);
-  };
+  const goSignup = () => router.push(`/signup?redirectTo=${encodeURIComponent(redirectTo)}`);
 
   return (
     <div style={{ padding: 24 }}>
@@ -137,7 +128,6 @@ export default function LoginPage() {
           autoComplete="current-password"
         />
 
-        {/* ✅ 인증 대기 안내 */}
         {needConfirm && (
           <div
             style={{
@@ -179,17 +169,18 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {needConfirm && (
-          <div style={{ fontSize: 12, opacity: 0.75 }}>
-            같은 이메일로 회원가입을 다시 누르면 메일 발송 제한(rate limit)이 걸릴 수 있어요. <br />
-            위 “재발송”을 사용하세요.
-          </div>
-        )}
-
         <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
           로그인 성공 후 이동: <code>{redirectTo}</code>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>로딩중...</div>}>
+      <LoginInner />
+    </Suspense>
   );
 }
