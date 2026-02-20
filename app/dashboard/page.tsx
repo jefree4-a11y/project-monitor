@@ -43,17 +43,17 @@ function toISODate(d: Date) {
 현재 > 계획 → 빨강(초과)
 
 계획 없음:
-- assignee === 'N/A'        → 미정(회색)
+- assignee === 'N/A'            → 미정(회색)
 - assignee !== 'N/A'(NULL 포함) → 누락(노랑)
 */
 
 const COLORS = {
-  done: "#4caf50",     // 완료
+  done: "#4caf50", // 완료
   progress: "#00e5ff", // 진행(파랑)
-  warn: "#ff9800",     // 경고
-  over: "#ff4d4f",     // 초과
+  warn: "#ff9800", // 경고
+  over: "#ff4d4f", // 초과
   undetermined: "#cfcfcf", // 미정(회색)
-  missing: "#ffe66b",      // 누락(노랑)
+  missing: "#ffe66b", // 누락(노랑)
 } as const;
 
 function normalizeAssignee(a?: string | null) {
@@ -90,6 +90,7 @@ const thBase: React.CSSProperties = {
   textAlign: "center",
   fontSize: "12pt",
   height: 48,
+  whiteSpace: "nowrap",
 };
 
 const tdBase: React.CSSProperties = {
@@ -141,6 +142,25 @@ function Circle({ color }: { color: string }) {
   );
 }
 
+/* ===================== 범례 ===================== */
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: "50%",
+          background: color,
+          border: "1px solid #333",
+        }}
+      />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 /* ===================== 메인 ===================== */
 
 export default function DashboardPage() {
@@ -148,35 +168,47 @@ export default function DashboardPage() {
   const [stages, setStages] = useState<Stage[]>([]);
   const [updates, setUpdates] = useState<UpdateRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<"진행" | "보류" | "완료">("진행");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   /* ===================== 데이터 로딩 ===================== */
 
   useEffect(() => {
     (async () => {
-      const p = await supabase
-        .from("projects")
-        .select("id, project_code, name, status")
-        .eq("status", statusFilter)
-        .order("project_code"); // 필요하면 .order("project_code", { ascending: false }) 로 변경
+      setLoading(true);
+      setErrorMsg(null);
 
-      const projectList = (p.data ?? []) as Project[];
-      setProjects(projectList);
+      try {
+        const p = await supabase
+          .from("projects")
+          .select("id, project_code, name, status")
+          .eq("status", statusFilter)
+          .order("project_code");
 
-      const s = await supabase.from("stages").select("id, name, sort_order").order("sort_order");
-      setStages((s.data ?? []) as Stage[]);
+        const projectList = (p.data ?? []) as Project[];
+        setProjects(projectList);
 
-      const ids = projectList.map((x) => x.id);
-      if (ids.length === 0) {
-        setUpdates([]);
-        return;
+        const s = await supabase.from("stages").select("id, name, sort_order").order("sort_order");
+        setStages((s.data ?? []) as Stage[]);
+
+        const ids = projectList.map((x) => x.id);
+        if (ids.length === 0) {
+          setUpdates([]);
+          setLoading(false);
+          return;
+        }
+
+        const u = await supabase
+          .from("stage_updates")
+          .select("project_id, stage_id, plan_date, approve_date, assignee")
+          .in("project_id", ids);
+
+        setUpdates((u.data ?? []) as UpdateRow[]);
+      } catch (e: any) {
+        setErrorMsg(e?.message ?? "데이터 로딩 중 오류가 발생했습니다.");
+      } finally {
+        setLoading(false);
       }
-
-      const u = await supabase
-        .from("stage_updates")
-        .select("project_id, stage_id, plan_date, approve_date, assignee")
-        .in("project_id", ids);
-
-      setUpdates((u.data ?? []) as UpdateRow[]);
     })();
   }, [statusFilter]);
 
@@ -195,12 +227,13 @@ export default function DashboardPage() {
 
   return (
     <div style={{ padding: 10 }}>
-      <h2 style={{ marginBottom: 10 }}>대시보드 (프로젝트 단계 현황)</h2>
+      <h2 style={{ marginBottom: 6 }}>대시보드 (프로젝트 단계 현황)</h2>
+      <div style={{ color: "#666", marginBottom: 10, fontSize: 13 }}>
+        * 대시보드는 로그인 없이 조회 가능 / 수정은 “조회 화면”의 수정 버튼에서 로그인 후 가능합니다.
+      </div>
 
-      {/* 상단: 입력 이동 + 상태필터 + 조회 */}
-      <div style={{ marginBottom: 12, display: "flex", gap: 20, alignItems: "center" }}>
-        <a href="/input">입력화면으로 이동</a>
-
+      {/* 상단: 상태필터 + 조회수 */}
+      <div style={{ marginBottom: 12, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
         <div>
           상태:
           <select
@@ -215,6 +248,9 @@ export default function DashboardPage() {
         </div>
 
         <div>조회 {projects.length}건</div>
+
+        {loading && <div style={{ color: "#666" }}>로딩 중...</div>}
+        {errorMsg && <div style={{ color: "red" }}>{errorMsg}</div>}
       </div>
 
       {/* 범례 */}
@@ -224,7 +260,7 @@ export default function DashboardPage() {
         <Legend color={COLORS.warn} label="경고" />
         <Legend color={COLORS.over} label="초과" />
         <Legend color={COLORS.missing} label="누락" />
-        <Legend color={COLORS.undetermined} label="계획없음" />
+        <Legend color={COLORS.undetermined} label="미정" />
       </div>
 
       {/* 테이블 */}
@@ -232,8 +268,8 @@ export default function DashboardPage() {
         <table style={{ borderCollapse: "collapse", tableLayout: "fixed", width: "100%" }}>
           <thead>
             <tr>
-              <th style={thStickyLeft(0, 100)}>코드</th>
-              <th style={thStickyLeft(100, 500)}>프로젝트명</th>
+              <th style={thStickyLeft(0, 120)}>코드</th>
+              <th style={thStickyLeft(120, 420)}>프로젝트명</th>
 
               {stages.map((s) => (
                 <th key={s.id} style={thBase}>
@@ -249,20 +285,23 @@ export default function DashboardPage() {
 
               return (
                 <tr key={p.id}>
-                  <td style={tdStickyLeft(0, 140)}>
-                    <a href={`/input?projectId=${p.id}`}>{p.project_code}</a>
+                  <td style={tdStickyLeft(0, 120)}>
+                    {/* ✅ 입력(/input)으로 가지 않고 조회(/view)로 이동 */}
+                    <a href={`/view?projectId=${p.id}`} style={{ fontWeight: 800 }}>
+                      {p.project_code}
+                    </a>
                   </td>
 
-                  <td style={tdStickyLeft(90, 260)}>
+                  <td style={tdStickyLeft(120, 420)}>
                     <a
-                      href={`/input?projectId=${p.id}`}
+                      href={`/view?projectId=${p.id}`}
                       style={{
                         color: "inherit",
                         textDecoration: "underline",
-                        fontWeight: 600,
+                        fontWeight: 700,
                         cursor: "pointer",
                       }}
-                      title="입력화면으로 이동"
+                      title="프로젝트 단계별 현황(조회)로 이동"
                     >
                       {p.name}
                     </a>
@@ -270,7 +309,6 @@ export default function DashboardPage() {
 
                   {stages.map((s) => {
                     const r = sm.get(s.id);
-
                     const color = getColor(r?.plan_date, r?.approve_date, r?.assignee);
 
                     return (
@@ -283,6 +321,9 @@ export default function DashboardPage() {
                           maxWidth: 70,
                           padding: 0,
                         }}
+                        title={`계획:${r?.plan_date ? r.plan_date.slice(0, 10) : "-"} / 승인:${
+                          r?.approve_date ? r.approve_date.slice(0, 10) : "-"
+                        } / 담당:${normalizeAssignee(r?.assignee) || "-"}`}
                       >
                         <div
                           style={{
@@ -303,25 +344,6 @@ export default function DashboardPage() {
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-/* ===================== 범례 ===================== */
-
-function Legend({ color, label }: { color: string; label: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          background: color,
-          border: "1px solid #333",
-        }}
-      />
-      <span>{label}</span>
     </div>
   );
 }

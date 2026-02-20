@@ -1,11 +1,25 @@
 "use client";
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+
+function sanitizeRedirect(path: string | null) {
+  // 보안: 외부 URL로 리다이렉트 방지
+  if (!path) return "/dashboard";
+  if (!path.startsWith("/")) return "/dashboard";
+  return path;
+}
 
 export default function SignupPage() {
   const router = useRouter();
+  const sp = useSearchParams();
+
+  // ✅ login과 동일: redirectTo 우선, 호환용 next도 허용
+  const redirectTo = useMemo(() => {
+    const r = sp.get("redirectTo") || sp.get("next");
+    return sanitizeRedirect(r);
+  }, [sp]);
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -34,11 +48,11 @@ export default function SignupPage() {
 
       if (error) return alert("회원가입 실패: " + error.message);
 
-      // ✅ 핵심: 이메일 인증이 켜져 있으면 session이 null일 수 있음
+      // ✅ 이메일 인증이 켜져 있으면 session이 null일 수 있음
       // 이 상태에서는 RLS 때문에 profiles insert/upsert가 실패할 수 있으니 여기서 DB 쓰기 하지 않음
       if (!data.session) {
         alert("회원가입이 완료되었습니다. 이메일 인증 후 로그인해주세요.");
-        router.push("/login");
+        router.replace(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
         return;
       }
 
@@ -58,25 +72,39 @@ export default function SignupPage() {
         if (pErr) {
           console.error("profiles upsert error:", pErr);
           alert("회원가입은 되었지만 프로필 저장 실패: " + pErr.message);
-          router.push("/login");
+          router.replace(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
           return;
         }
       }
 
       alert("회원가입이 완료되었습니다.");
-      router.push("/login");
+      router.replace(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const goLogin = () => {
+    router.push(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
   };
 
   return (
     <div style={{ padding: 24 }}>
       <h1 style={{ margin: "0 0 16px 0" }}>회원가입</h1>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 260 }}>
-        <input placeholder="사용자명" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-        <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 300 }}>
+        <input
+          placeholder="사용자명"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          autoComplete="name"
+        />
+        <input
+          placeholder="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
+        />
         <input
           placeholder="password"
           type="password"
@@ -89,13 +117,17 @@ export default function SignupPage() {
           <button onClick={onSignup} disabled={loading} style={{ flex: 1 }}>
             {loading ? "가입중..." : "가입하기"}
           </button>
-          <button onClick={() => router.push("/login")} style={{ flex: 1 }}>
+          <button onClick={goLogin} disabled={loading} style={{ flex: 1 }}>
             로그인으로
           </button>
         </div>
 
         <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
           * 회원가입 후 기본은 <b>미승인</b> 상태로 저장됩니다.
+        </div>
+
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+          가입/로그인 후 이동: <code>{redirectTo}</code>
         </div>
       </div>
     </div>

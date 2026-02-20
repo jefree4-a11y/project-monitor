@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
+/* ===================== 타입 ===================== */
+
 type Profile = {
   email: string | null;
   full_name: string | null;
@@ -29,7 +31,7 @@ type OwnerRow = Record<RoleKey, string>;
 const emptyOwnerRow: OwnerRow = { pm: "", design: "", mech: "", control: "", safety: "" };
 
 type Update = {
-  id: string | null; // ✅ id(UUID) 기준 저장/수정
+  id: string | null; // stage_updates.id(UUID)
   project_id: string;
   stage_id: string;
   assignee: string | null;
@@ -47,7 +49,6 @@ type Update = {
 
   memo: string | null;
 
-  // ✅ 빨간 박스 저장용 컬럼들 (stage_updates에 추가 필요)
   owner_pm?: string | null;
   owner_design?: string | null;
   owner_mech?: string | null;
@@ -55,6 +56,8 @@ type Update = {
   owner_safety?: string | null;
   owner_matrix?: any | null; // jsonb
 };
+
+/* ===================== 유틸 ===================== */
 
 function addDaysISO(base: string, days: number) {
   const d = new Date(`${base}T00:00:00`);
@@ -65,23 +68,52 @@ function addDaysISO(base: string, days: number) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function buildBaseRow(projectId: string, stageId: string): Update {
+  return {
+    id: null,
+    project_id: projectId,
+    stage_id: stageId,
+    assignee: null,
+    plan_date: null,
+    actual_date: null,
+    approve_date: null,
+    remark_design_work: false,
+    remark_outsource_design: false,
+    vendor_assembly: null,
+    vendor_install: null,
+    vendor_control: null,
+    vendor_program: null,
+    memo: null,
+    owner_pm: null,
+    owner_design: null,
+    owner_mech: null,
+    owner_control: null,
+    owner_safety: null,
+    owner_matrix: null,
+  };
+}
+
+/* ===================== 컴포넌트 ===================== */
+
 export default function InputPage() {
   // ✅ 로그인 사용자 표시용
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  // 기존 상태들
+  // 데이터
   const [projects, setProjects] = useState<Project[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [projectId, setProjectId] = useState<string>("");
+
+  // URL에서 받은 projectId (대시보드/조회화면에서 진입)
   const [urlProjectId, setUrlProjectId] = useState<string>("");
 
-  // stage_id -> row
+  // stage_id -> Update row
   const [rows, setRows] = useState<Record<string, Update>>({});
 
   // ---- 프로젝트 추가 모달 상태 ----
   const [open, setOpen] = useState(false);
-
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
   const [newCustomer, setNewCustomer] = useState("");
@@ -93,7 +125,6 @@ export default function InputPage() {
 
   // ---- 프로젝트 수정 모달 상태 ----
   const [editOpen, setEditOpen] = useState(false);
-
   const [editCode, setEditCode] = useState("");
   const [editName, setEditName] = useState("");
   const [editCustomer, setEditCustomer] = useState("");
@@ -106,7 +137,7 @@ export default function InputPage() {
   // 로그아웃 처리중 표시(중복 클릭 방지)
   const [loggingOut, setLoggingOut] = useState(false);
 
-  // ✅ 빨간 박스 입력 상태(A/B)
+  // ✅ 담당자 입력 상태(A/B)
   const [ownerMode, setOwnerMode] = useState<OwnerMode>("B_ONE_ROW");
   const [ownerOne, setOwnerOne] = useState<OwnerRow>({ ...emptyOwnerRow });
   const [ownerRows, setOwnerRows] = useState<OwnerRow[]>(Array.from({ length: 5 }, () => ({ ...emptyOwnerRow })));
@@ -119,6 +150,22 @@ export default function InputPage() {
   // 공통 TD 스타일(정렬 깨짐 방지)
   const tdCenter: React.CSSProperties = { verticalAlign: "middle", textAlign: "center" };
   const tdTop: React.CSSProperties = { verticalAlign: "top" };
+
+  const selected = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
+
+  const stagesSorted = useMemo(() => {
+    const list = [...stages];
+    list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    return list;
+  }, [stages]);
+
+  // ✅ 담당자 입력 저장에 사용할 대표 stage_id (가장 첫 단계)
+  const ownerStageId = useMemo(() => {
+    if (!stagesSorted.length) return "";
+    return stagesSorted[0].id;
+  }, [stagesSorted]);
+
+  /* ===================== Auth ===================== */
 
   // ✅ 로그아웃: /dashboard 로 이동
   async function handleLogout() {
@@ -136,7 +183,7 @@ export default function InputPage() {
     }
   }
 
-  // ✅ 0) 로그인 사용자 정보 로드
+  // ✅ 0) 로그인 사용자 정보 로드 (없으면 /login?redirectTo=... 로 보냄)
   useEffect(() => {
     const run = async () => {
       const { data, error } = await supabase.auth.getUser();
@@ -145,26 +192,42 @@ export default function InputPage() {
       const user = data.user;
       setEmail(user?.email ?? null);
 
-      if (user) {
-        const { data: p, error: pErr } = await supabase
-          .from("profiles")
-          .select("email, full_name, approved")
-          .eq("id", user.id)
-          .single();
-
-        if (pErr) {
-          console.warn("profiles select error:", pErr);
-          setProfile(null);
-        } else {
-          setProfile((p as Profile) ?? null);
-        }
+      // ✅ 로그인 안 되어 있으면 로그인 페이지로 (원래 가려던 곳 포함)
+      if (!user) {
+        setAuthChecked(true);
+        const here = window.location.pathname + window.location.search; // /input?projectId=...
+        window.location.href = `/login?redirectTo=${encodeURIComponent(here)}`;
+        return;
       }
+
+      const { data: p, error: pErr } = await supabase
+        .from("profiles")
+        .select("email, full_name, approved")
+        .eq("id", user.id)
+        .single();
+
+      if (pErr) {
+        console.warn("profiles select error:", pErr);
+        setProfile(null);
+      } else {
+        setProfile((p as Profile) ?? null);
+      }
+
+      setAuthChecked(true);
     };
 
     run();
   }, []);
 
-  // 1) 프로젝트 목록 갱신
+  /* ===================== Data Load ===================== */
+
+  // 1) URL에서 projectId 읽기
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("projectId") || "";
+    setUrlProjectId(id);
+  }, []);
+
+  // 2) 프로젝트 목록 갱신
   async function refreshProjects(selectId?: string) {
     const p = await supabase
       .from("projects")
@@ -180,28 +243,18 @@ export default function InputPage() {
     const list = (p.data ?? []) as Project[];
     setProjects(list);
 
-    if (selectId) {
-      setProjectId(selectId);
+    // 우선순위: selectId > urlProjectId > 기존 projectId 유지 > 첫번째
+    const nextId = selectId || (urlProjectId && list.some((x) => x.id === urlProjectId) ? urlProjectId : "") || projectId;
+
+    if (nextId && list.some((x) => x.id === nextId)) {
+      setProjectId(nextId);
       return;
     }
 
-    if (urlProjectId) {
-      setProjectId(urlProjectId);
-      return;
-    }
-
-    if (!projectId && list.length > 0) {
-      setProjectId(list[0].id);
-    }
+    if (list.length > 0) setProjectId(list[0].id);
   }
 
-  // 2-1) URL에서 projectId 읽기
-  useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("projectId") || "";
-    setUrlProjectId(id);
-  }, []);
-
-  // 2-2) 단계 목록 + 프로젝트 목록 로딩
+  // 3) 단계 목록 + 프로젝트 목록 로딩
   useEffect(() => {
     (async () => {
       await refreshProjects(urlProjectId || undefined);
@@ -219,16 +272,9 @@ export default function InputPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlProjectId]);
 
-  // ✅ 빨간 박스 저장에 사용할 “대표 stage_id” (가장 앞 단계 1개)
-  const ownerStageId = useMemo(() => {
-    if (!stages || stages.length === 0) return "";
-    // stages는 sort_order로 이미 정렬되어 들어옴
-    return stages[0].id;
-  }, [stages]);
-
-  // 3) 프로젝트 선택 시 stage_updates 불러오기
+  // 4) 프로젝트 선택 시 stage_updates 불러오기
   useEffect(() => {
-    if (!projectId || stages.length === 0) return;
+    if (!projectId || stagesSorted.length === 0) return;
 
     (async () => {
       const u = await supabase
@@ -254,43 +300,19 @@ export default function InputPage() {
 
       // 기본 틀 생성
       const base: Record<string, Update> = {};
-      for (const st of stages) {
-        base[st.id] = {
-          id: null,
-          project_id: projectId,
-          stage_id: st.id,
-          assignee: null,
-          plan_date: null,
-          actual_date: null,
-          approve_date: null,
-          remark_design_work: false,
-          remark_outsource_design: false,
-          vendor_assembly: null,
-          vendor_install: null,
-          vendor_control: null,
-          vendor_program: null,
-          memo: null,
-          owner_pm: null,
-          owner_design: null,
-          owner_mech: null,
-          owner_control: null,
-          owner_safety: null,
-          owner_matrix: null,
-        };
+      for (const st of stagesSorted) {
+        base[st.id] = buildBaseRow(projectId, st.id);
       }
 
       for (const item of (u.data ?? []) as any[]) {
         const stId = item.stage_id as string;
-        base[stId] = {
-          ...base[stId],
-          ...item,
-          id: item.id ?? null,
-        };
+        if (!base[stId]) base[stId] = buildBaseRow(projectId, stId);
+        base[stId] = { ...base[stId], ...item, id: item.id ?? null };
       }
 
       setRows(base);
 
-      // ✅ 대표 stage(ownerStageId)의 저장값으로 빨간 박스 초기화
+      // ✅ 대표 stage(ownerStageId)의 저장값으로 담당자 입력 초기화
       const ownerRow = ownerStageId ? base[ownerStageId] : null;
       if (ownerRow) {
         const matrix = ownerRow.owner_matrix;
@@ -316,13 +338,14 @@ export default function InputPage() {
           });
         }
       } else {
-        // stages는 있는데 ownerStageId가 비정상일 때 대비
         setOwnerMode("B_ONE_ROW");
         setOwnerOne({ ...emptyOwnerRow });
         setOwnerRows(Array.from({ length: 5 }, () => ({ ...emptyOwnerRow })));
       }
     })();
-  }, [projectId, stages, ownerStageId]);
+  }, [projectId, stagesSorted, ownerStageId]);
+
+  /* ===================== Handlers ===================== */
 
   function setField(stageId: string, key: keyof Update, value: any) {
     setRows((prev) => ({
@@ -331,32 +354,31 @@ export default function InputPage() {
     }));
   }
 
-  // ✅ 1번 계획일 변경 처리 (2~5 무조건 자동 덮어쓰기)
+  // ✅ 첫 단계 계획일 변경 시 → 2~5단계 자동 설정
   function onChangePlanDate(stageId: string, v: string | null) {
     setRows((prev) => {
       const next = { ...prev };
+      if (!next[stageId]) return prev;
 
       next[stageId] = { ...next[stageId], plan_date: v };
 
-      if (stageId === "1") {
-        if (v) {
-          next["2"] = { ...next["2"], plan_date: addDaysISO(v, 7) };
-          next["3"] = { ...next["3"], plan_date: addDaysISO(v, 10) };
-          next["4"] = { ...next["4"], plan_date: addDaysISO(v, 12) };
-          next["5"] = { ...next["5"], plan_date: addDaysISO(v, 14) };
-        } else {
-          next["2"] = { ...next["2"], plan_date: null };
-          next["3"] = { ...next["3"], plan_date: null };
-          next["4"] = { ...next["4"], plan_date: null };
-          next["5"] = { ...next["5"], plan_date: null };
-        }
+      const changedStage = stagesSorted.find((s) => s.id === stageId);
+      const isFirst = (changedStage?.sort_order ?? 999999) === (stagesSorted[0]?.sort_order ?? 1);
+      if (!isFirst) return next;
+
+      const offsets = [7, 10, 12, 14];
+      const nextStages = stagesSorted.slice(1, 5); // 2~5단계
+      for (let i = 0; i < nextStages.length; i++) {
+        const st = nextStages[i];
+        if (!next[st.id]) continue;
+        next[st.id] = { ...next[st.id], plan_date: v ? addDaysISO(v, offsets[i] ?? 0) : null };
       }
 
       return next;
     });
   }
 
-  // ✅ 빨간박스 입력 핸들러
+  // ✅ 담당자 입력 핸들러
   const updateOwnerCell = (rIdx: number, key: RoleKey, value: string) => {
     if (ownerMode === "B_ONE_ROW") {
       setOwnerOne((prev) => ({ ...prev, [key]: value }));
@@ -371,9 +393,9 @@ export default function InputPage() {
   const addOwnerRow = () => setOwnerRows((prev) => [...prev, { ...emptyOwnerRow }]);
   const removeOwnerRow = (rIdx: number) => setOwnerRows((prev) => prev.filter((_, i) => i !== rIdx));
 
-  // ✅ (중요) 빨간 박스 상태를 rows[ownerStageId]에 반영
+  // ✅ 담당자 입력 상태를 rows[ownerStageId]에 반영
   function applyOwnerBoxToRows(current: Record<string, Update>) {
-    if (!ownerStageId) return current; // stages 없을 때 방어
+    if (!ownerStageId) return current;
     const next = { ...current };
     const target = next[ownerStageId];
     if (!target) return current;
@@ -393,7 +415,6 @@ export default function InputPage() {
       next[ownerStageId] = {
         ...target,
         owner_matrix: m,
-        // 검색/표시 편의: 첫 줄을 5컬럼에도 미러링
         owner_pm: m[0]?.pm || null,
         owner_design: m[0]?.design || null,
         owner_mech: m[0]?.mech || null,
@@ -404,19 +425,15 @@ export default function InputPage() {
     return next;
   }
 
-  // 4) 단계 입력값 저장 (✅ id(UUID) 기준으로 insert/update)
+  // ✅ 단계 입력값 저장 (id(UUID) 기준 insert/update)
   async function saveAll() {
     if (!projectId) return alert("프로젝트를 먼저 선택하세요.");
-    if (!stages || stages.length === 0) return alert("단계(stages)가 없습니다.");
+    if (!stagesSorted.length) return alert("단계(stages)가 없습니다.");
 
-    // ✅ 먼저 빨간 박스 값을 rows에 반영
     const mergedRows = applyOwnerBoxToRows(rows);
-
-    // ✅ 저장(각 stage별로 id 있으면 update, 없으면 insert)
-    // - 성능보다 안정/가독 우선(프로젝트당 stage 수 적으니 OK)
     const nextRows: Record<string, Update> = { ...mergedRows };
 
-    for (const st of stages) {
+    for (const st of stagesSorted) {
       const r = mergedRows[st.id];
       if (!r) continue;
 
@@ -439,7 +456,6 @@ export default function InputPage() {
         memo: r.memo || null,
         updated_at: new Date().toISOString(),
 
-        // ✅ 빨간 박스 컬럼(대표 stage에만 값이 들어가고 나머지는 null일 수 있음)
         owner_pm: r.owner_pm ?? null,
         owner_design: r.owner_design ?? null,
         owner_mech: r.owner_mech ?? null,
@@ -450,12 +466,10 @@ export default function InputPage() {
 
       if (r.id) {
         const { error } = await supabase.from("stage_updates").update(payload).eq("id", r.id);
-        if (error) return alert(`저장 실패(stage ${st.id}): ${error.message}`);
+        if (error) return alert(`저장 실패(stage ${st.sort_order}): ${error.message}`);
       } else {
         const { data, error } = await supabase.from("stage_updates").insert([payload]).select("id").single();
-        if (error) return alert(`저장 실패(stage ${st.id}): ${error.message}`);
-
-        // 새로 생성된 id 반영
+        if (error) return alert(`저장 실패(stage ${st.sort_order}): ${error.message}`);
         nextRows[st.id] = { ...nextRows[st.id], id: (data as any)?.id ?? null };
       }
     }
@@ -464,7 +478,7 @@ export default function InputPage() {
     alert("저장 완료!");
   }
 
-  // 5) 프로젝트 추가
+  // ✅ 프로젝트 추가
   async function addProject() {
     if (!newCode.trim()) return alert("프로젝트 코드가 필요합니다.");
     if (!newName.trim()) return alert("프로젝트명이 필요합니다.");
@@ -496,19 +510,15 @@ export default function InputPage() {
     setNewDueDate("");
     setNewStatus("진행");
     setNewPmEmail("");
-
     setOpen(false);
 
     await refreshProjects((data as any).id);
     alert("프로젝트가 추가되었습니다.");
   }
 
-  const selected = projects.find((p) => p.id === projectId);
-
-  // 수정 모달 열 때 자동으로 값 채우기
+  // ✅ 수정 모달 열 때 자동으로 값 채우기
   useEffect(() => {
     if (!selected) return;
-
     setEditCode(selected.project_code ?? "");
     setEditName(selected.name ?? "");
     setEditCustomer(selected.customer ?? "");
@@ -519,7 +529,7 @@ export default function InputPage() {
     setEditPmEmail(selected.pm_email ?? "");
   }, [selected]);
 
-  // 6) 프로젝트 수정 저장
+  // ✅ 프로젝트 수정 저장
   async function updateProject() {
     if (!selected) return alert("수정할 프로젝트를 먼저 선택하세요.");
     if (!editName.trim()) return alert("프로젝트명은 필수입니다.");
@@ -544,15 +554,18 @@ export default function InputPage() {
     alert("프로젝트 정보가 수정되었습니다.");
   }
 
+  /* ===================== Render ===================== */
+
+  if (!authChecked) return <div style={{ padding: 16 }}>로그인 확인중...</div>;
+
   return (
     <div style={{ padding: 16, height: "100vh", overflowY: "auto" }}>
       {/* ===== 상단 헤더 ===== */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <h2 style={{ margin: 0 }}>프로젝트추가</h2>
+        <h2 style={{ margin: 0 }}>프로젝트 입력</h2>
 
-        {/* 오른쪽 영역: 사용자정보(버튼 위) + 버튼 */}
+        {/* 오른쪽 영역: 사용자정보 + 버튼 */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-          {/* ✅ 버튼 위에 사용자 정보 한 줄 + 로그아웃 버튼(승인됨 오른쪽) */}
           <div
             style={{
               fontSize: 13,
@@ -585,7 +598,6 @@ export default function InputPage() {
             </button>
           </div>
 
-          {/* 버튼 영역 */}
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setOpen(true)}>+ 프로젝트 추가</button>
             <button onClick={() => setEditOpen(true)} disabled={!selected}>
@@ -610,181 +622,160 @@ export default function InputPage() {
           ))}
         </select>
 
-        {/* 선택 프로젝트 정보 */}
-{selected && (
-  <div
-    style={{
-      marginTop: 10,
-      padding: 10,
-      border: "1px solid #ddd",
-      borderRadius: 6,
-      display: "grid",
-      gridTemplateColumns: "1fr 520px",
-      gap: 16,
-      alignItems: "start",
-    }}
-  >
-    {/* 왼쪽: 프로젝트 정보 */}
-    <div>
-      <div>
-        <b>고객사</b>: {selected.customer ?? "-"}
-      </div>
-      <div>
-        <b>설치위치</b>: {selected.install_location ?? "-"}
-      </div>
-      <div>
-        <b>수주일자</b>: {selected.order_date ?? "-"}
-      </div>
-      <div>
-        <b>납기일</b>: {selected.due_date ?? "-"}
-      </div>
-      <div>
-        <b>상태</b>: {selected.status}
-      </div>
-      <div>
-        <b>PM</b>: {selected.pm_email ?? "-"}
-      </div>
-    </div>
+        {/* 선택 프로젝트 정보 + 담당자 입력 */}
+        {selected && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: 10,
+              border: "1px solid #ddd",
+              borderRadius: 6,
+              display: "grid",
+              gridTemplateColumns: "1fr 560px",
+              gap: 16,
+              alignItems: "start",
+            }}
+          >
+            {/* 왼쪽: 프로젝트 정보 */}
+            <div>
+              <div>
+                <b>고객사</b>: {selected.customer ?? "-"}
+              </div>
+              <div>
+                <b>설치위치</b>: {selected.install_location ?? "-"}
+              </div>
+              <div>
+                <b>수주일자</b>: {selected.order_date ?? "-"}
+              </div>
+              <div>
+                <b>납기일</b>: {selected.due_date ?? "-"}
+              </div>
+              <div>
+                <b>상태</b>: {selected.status}
+              </div>
+              <div>
+                <b>PM</b>: {selected.pm_email ?? "-"}
+              </div>
+            </div>
 
-    {/* 오른쪽: 담당자 입력(기존 빨간 박스 블록을 여기로 이동) */}
-    <div style={{ width: 520 }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
-        <b style={{ fontSize: 13 }}>담당자 입력</b>
+            {/* 오른쪽: 담당자 입력 */}
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <div style={{ width: 520 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
+                  <b style={{ fontSize: 13 }}>담당자 입력</b>
 
-        <label style={radioLabel}>
-          <input
-            type="radio"
-            name="ownerMode"
-            checked={ownerMode === "B_ONE_ROW"}
-            onChange={() => setOwnerMode("B_ONE_ROW")}
-          />
-          B(1행)
-        </label>
-
-        <label style={radioLabel}>
-          <input
-            type="radio"
-            name="ownerMode"
-            checked={ownerMode === "A_MULTI_ROW"}
-            onChange={() => setOwnerMode("A_MULTI_ROW")}
-          />
-          A(여러줄)
-        </label>
-
-        {ownerMode === "A_MULTI_ROW" && (
-          <button type="button" onClick={addOwnerRow} style={btnStyle}>
-            + 행 추가
-          </button>
-        )}
-      </div>
-
-      <div style={{ border: "1px solid #d0d7de", borderRadius: 6, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-          <thead>
-            <tr>
-              {["PM", "설계", "기계", "제어", "안전"].map((h) => (
-                <th key={h} style={thStyle}>
-                  {h}
-                </th>
-              ))}
-              {ownerMode === "A_MULTI_ROW" ? <th style={thStyle}></th> : null}
-            </tr>
-          </thead>
-
-          <tbody>
-            {ownerCurrentRows.map((row, rIdx) => (
-              <tr key={rIdx}>
-                {(["pm", "design", "mech", "control", "safety"] as RoleKey[]).map((k) => (
-                  <td key={k} style={ownerTdStyle}>
+                  <label style={radioLabel}>
                     <input
-                      value={row[k]}
-                      onChange={(e) => updateOwnerCell(rIdx, k, e.target.value)}
-                      style={ownerInputStyle}
-                      placeholder=""
+                      type="radio"
+                      name="ownerMode"
+                      checked={ownerMode === "B_ONE_ROW"}
+                      onChange={() => setOwnerMode("B_ONE_ROW")}
                     />
-                  </td>
-                ))}
+                    B(1행)
+                  </label>
 
-                {ownerMode === "A_MULTI_ROW" ? (
-                  <td style={{ ...ownerTdStyle, width: 44 }}>
-                    <button type="button" onClick={() => removeOwnerRow(rIdx)} style={iconBtnStyle}>
-                      ✕
+                  <label style={radioLabel}>
+                    <input
+                      type="radio"
+                      name="ownerMode"
+                      checked={ownerMode === "A_MULTI_ROW"}
+                      onChange={() => setOwnerMode("A_MULTI_ROW")}
+                    />
+                    A(여러줄)
+                  </label>
+
+                  {ownerMode === "A_MULTI_ROW" && (
+                    <button type="button" onClick={addOwnerRow} style={btnStyle}>
+                      + 행 추가
                     </button>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  )}
+                </div>
 
-      
-    </div>
-  </div>
-)}
+                <div style={{ border: "1px solid #d0d7de", borderRadius: 6, overflow: "hidden" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                    <thead>
+                      <tr>
+                        {["PM", "설계", "기계", "제어", "안전"].map((h) => (
+                          <th key={h} style={thStyle}>
+                            {h}
+                          </th>
+                        ))}
+                        {ownerMode === "A_MULTI_ROW" ? <th style={thStyle}></th> : null}
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {ownerCurrentRows.map((row, rIdx) => (
+                        <tr key={rIdx}>
+                          {(["pm", "design", "mech", "control", "safety"] as RoleKey[]).map((k) => (
+                            <td key={k} style={ownerTdStyle}>
+                              <input value={row[k]} onChange={(e) => updateOwnerCell(rIdx, k, e.target.value)} style={ownerInputStyle} />
+                            </td>
+                          ))}
+
+                          {ownerMode === "A_MULTI_ROW" ? (
+                            <td style={{ ...ownerTdStyle, width: 44 }}>
+                              <button type="button" onClick={() => removeOwnerRow(rIdx)} style={iconBtnStyle}>
+                                ✕
+                              </button>
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: 6, fontSize: 12, color: "#64748b", textAlign: "center" }}></div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ===== 단계 입력 테이블 ===== */}
       <table border={1} cellPadding={4} style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
         <thead>
           <tr>
-            <th style={{ width: 120 }}>단계</th>
-            <th style={{ width: 60, textAlign: "center" }}>담당자</th>
-            <th style={{ width: 110 }}>계획일</th>
-            <th style={{ width: 110 }}>실적일</th>
-            <th style={{ width: 150 }}>승인일(품질관리팀)</th>
-            <th style={{ width: 180 }}>비고</th>
-            <th style={{ width: 420 }}>메모</th>
+            <th style={{ width: 180 }}>단계</th>
+            <th style={{ width: 80, textAlign: "center" }}>담당자</th>
+            <th style={{ width: 120 }}>계획일</th>
+            <th style={{ width: 120 }}>실적일</th>
+            <th style={{ width: 170 }}>승인일(품질관리팀)</th>
+            <th style={{ width: 220 }}>비고</th>
+            <th>메모</th>
           </tr>
         </thead>
 
         <tbody>
-          {stages.map((st) => (
+          {stagesSorted.map((st) => (
             <tr key={st.id}>
               <td style={{ whiteSpace: "nowrap" }}>
-                {st.id}. {st.name}
+                {st.sort_order}. {st.name}
               </td>
 
-              {/* 담당자 */}
               <td style={tdCenter}>
                 <input
-                  style={{ width: 60, textAlign: "center" }}
+                  style={{ width: 70, textAlign: "center" }}
                   value={rows[st.id]?.assignee ?? ""}
                   onChange={(e) => setField(st.id, "assignee", e.target.value)}
-                  placeholder=""
                 />
               </td>
 
-              {/* 계획일 */}
               <td style={tdCenter}>
-                <input
-                  type="date"
-                  value={rows[st.id]?.plan_date ?? ""}
-                  onChange={(e) => onChangePlanDate(st.id, e.target.value || null)}
-                />
+                <input type="date" value={rows[st.id]?.plan_date ?? ""} onChange={(e) => onChangePlanDate(st.id, e.target.value || null)} />
               </td>
 
-              {/* 실적일 */}
               <td style={tdCenter}>
-                <input
-                  type="date"
-                  value={rows[st.id]?.actual_date ?? ""}
-                  onChange={(e) => setField(st.id, "actual_date", e.target.value || null)}
-                />
+                <input type="date" value={rows[st.id]?.actual_date ?? ""} onChange={(e) => setField(st.id, "actual_date", e.target.value || null)} />
               </td>
 
-              {/* 승인일 */}
               <td style={tdCenter}>
-                <input
-                  type="date"
-                  value={rows[st.id]?.approve_date ?? ""}
-                  onChange={(e) => setField(st.id, "approve_date", e.target.value || null)}
-                />
+                <input type="date" value={rows[st.id]?.approve_date ?? ""} onChange={(e) => setField(st.id, "approve_date", e.target.value || null)} />
               </td>
 
-              {/* 비고 */}
               <td style={tdTop}>
-                {st.id === "7-1" ? (
+                {st.sort_order === 7 ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
                     <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input
@@ -804,7 +795,7 @@ export default function InputPage() {
                       외주설계
                     </label>
                   </div>
-                ) : st.id === "8" ? (
+                ) : st.sort_order === 8 ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {[
                       ["vendor_assembly", "조립"],
@@ -815,7 +806,7 @@ export default function InputPage() {
                       <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ width: 80 }}>● {label}</span>
                         <input
-                          style={{ width: 120 }}
+                          style={{ width: 140 }}
                           value={(rows[st.id] as any)?.[key] ?? ""}
                           onChange={(e) => setField(st.id, key as any, e.target.value)}
                         />
@@ -827,19 +818,17 @@ export default function InputPage() {
                 )}
               </td>
 
-              {/* 메모 */}
               <td style={tdTop}>
                 <textarea
                   value={rows[st.id]?.memo ?? ""}
                   onChange={(e) => {
                     setField(st.id, "memo", e.target.value);
-                    e.target.style.height = "auto";
-                    e.target.style.height = e.target.scrollHeight + "px";
+                    e.currentTarget.style.height = "auto";
+                    e.currentTarget.style.height = e.currentTarget.scrollHeight + "px";
                   }}
                   rows={1}
                   style={{
                     width: "100%",
-                    minWidth: 380,
                     minHeight: 28,
                     resize: "none",
                     overflow: "hidden",
@@ -872,11 +861,7 @@ export default function InputPage() {
               <input value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)} />
 
               <label>설치위치</label>
-              <input
-                value={newInstallLocation}
-                onChange={(e) => setNewInstallLocation(e.target.value)}
-                placeholder="예: 둔포3공장"
-              />
+              <input value={newInstallLocation} onChange={(e) => setNewInstallLocation(e.target.value)} />
 
               <label>수주일자</label>
               <input type="date" value={newOrderDate} onChange={(e) => setNewOrderDate(e.target.value)} />
@@ -891,8 +876,8 @@ export default function InputPage() {
                 <option value="완료">완료</option>
               </select>
 
-              <label>PM </label>
-              <input value={newPmEmail} onChange={(e) => setNewPmEmail(e.target.value)} placeholder="" />
+              <label>PM</label>
+              <input value={newPmEmail} onChange={(e) => setNewPmEmail(e.target.value)} />
             </div>
 
             <div style={{ marginTop: 14, display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -940,7 +925,7 @@ export default function InputPage() {
                 <option value="완료">완료</option>
               </select>
 
-              <label>PM </label>
+              <label>PM</label>
               <input value={editPmEmail} onChange={(e) => setEditPmEmail(e.target.value)} />
             </div>
 
@@ -949,7 +934,7 @@ export default function InputPage() {
               <button onClick={updateProject}>저장</button>
             </div>
 
-            <p style={{ marginTop: 10, color: "#666" }}>* 프로젝트 코드는 고유키로 쓰는 경우가 많아 수정 불가로 두었습니다.</p>
+            <p style={{ marginTop: 10, color: "#666" }}>* 프로젝트 코드는 수정 불가로 두었습니다.</p>
           </div>
         </div>
       )}
@@ -957,7 +942,8 @@ export default function InputPage() {
   );
 }
 
-/** 모달 스타일 */
+/* ===================== 스타일 ===================== */
+
 const overlay: React.CSSProperties = {
   position: "fixed",
   inset: 0,
@@ -977,7 +963,12 @@ const modal: React.CSSProperties = {
   boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
 };
 
-const radioLabel: React.CSSProperties = { display: "flex", gap: 6, alignItems: "center", fontSize: 12 };
+const radioLabel: React.CSSProperties = {
+  display: "flex",
+  gap: 6,
+  alignItems: "center",
+  fontSize: 12,
+};
 
 const btnStyle: React.CSSProperties = {
   border: "1px solid #cbd5e1",
