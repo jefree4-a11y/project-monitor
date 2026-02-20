@@ -268,8 +268,8 @@ export default function DashboardPage() {
         <table style={{ borderCollapse: "collapse", tableLayout: "fixed", width: "100%" }}>
           <thead>
             <tr>
-              <th style={thStickyLeft(0, 120)}>코드</th>
-              <th style={thStickyLeft(120, 420)}>프로젝트명</th>
+              <th style={thStickyLeft(0, 100)}>코드</th>
+              <th style={thStickyLeft(100, 440)}>프로젝트명</th>
 
               {stages.map((s) => (
                 <th key={s.id} style={thBase}>
@@ -285,14 +285,14 @@ export default function DashboardPage() {
 
               return (
                 <tr key={p.id}>
-                  <td style={tdStickyLeft(0, 120)}>
+                  <td style={tdStickyLeft(0, 100)}>
                     {/* ✅ 입력(/input)으로 가지 않고 조회(/view)로 이동 */}
                     <a href={`/view?projectId=${p.id}`} style={{ fontWeight: 800 }}>
                       {p.project_code}
                     </a>
                   </td>
 
-                  <td style={tdStickyLeft(120, 420)}>
+                  <td style={tdStickyLeft(100, 440)}>
                     <a
                       href={`/view?projectId=${p.id}`}
                       style={{
