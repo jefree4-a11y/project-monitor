@@ -329,11 +329,26 @@ function ViewInner() {
       setHistoryError(error.message);
       setHistoryLoading(false);
       return;
-    }
-
-    setHistoryItems((data ?? []) as any);
-    setHistoryLoading(false);
   }
+
+  const list = (data ?? []) as any[];
+
+  // ✅ 변경(diff)이 있는 것만 남김
+  const filtered = list.filter((h) => diffSummary(h.old_row, h.new_row).length > 0);
+
+  // ✅ 변경된 이력이 없으면: 모달을 아예 안 띄움(조회 안 됨)
+  if (filtered.length === 0) {
+    setHistoryOpen(false);
+    setHistoryStage(null);
+    setHistoryItems([]);
+    setHistoryLoading(false);
+    alert("이 단계는 변경된 이력이 없습니다.");
+    return;
+  }
+
+  setHistoryItems(filtered as any);
+  setHistoryLoading(false);
+}
 
   function closeHistory() {
     setHistoryOpen(false);
