@@ -466,10 +466,10 @@ export default function InputPage() {
 
       if (r.id) {
         const { error } = await supabase.from("stage_updates").update(payload).eq("id", r.id);
-        if (error) return alert(`저장 실패(stage ${st.sort_order}): ${error.message}`);
+        if (error) return alert(`저장 실패(stage ${st.id}): ${error.message}`);
       } else {
         const { data, error } = await supabase.from("stage_updates").insert([payload]).select("id").single();
-        if (error) return alert(`저장 실패(stage ${st.sort_order}): ${error.message}`);
+        if (error) return alert(`저장 실패(stage ${st.id}): ${error.message}`);
         nextRows[st.id] = { ...nextRows[st.id], id: (data as any)?.id ?? null };
       }
     }
@@ -709,7 +709,11 @@ export default function InputPage() {
                         <tr key={rIdx}>
                           {(["pm", "design", "mech", "control", "safety"] as RoleKey[]).map((k) => (
                             <td key={k} style={ownerTdStyle}>
-                              <input value={row[k]} onChange={(e) => updateOwnerCell(rIdx, k, e.target.value)} style={ownerInputStyle} />
+                              <input
+                                value={row[k]}
+                                onChange={(e) => updateOwnerCell(rIdx, k, e.target.value)}
+                                style={ownerInputStyle}
+                              />
                             </td>
                           ))}
 
@@ -750,8 +754,9 @@ export default function InputPage() {
         <tbody>
           {stagesSorted.map((st) => (
             <tr key={st.id}>
+              {/* ✅ 여기: "sort_order + name" → "id + name" */}
               <td style={{ whiteSpace: "nowrap" }}>
-                {st.sort_order}. {st.name}
+                {st.id}. {st.name}
               </td>
 
               <td style={tdCenter}>
@@ -763,19 +768,32 @@ export default function InputPage() {
               </td>
 
               <td style={tdCenter}>
-                <input type="date" value={rows[st.id]?.plan_date ?? ""} onChange={(e) => onChangePlanDate(st.id, e.target.value || null)} />
+                <input
+                  type="date"
+                  value={rows[st.id]?.plan_date ?? ""}
+                  onChange={(e) => onChangePlanDate(st.id, e.target.value || null)}
+                />
               </td>
 
               <td style={tdCenter}>
-                <input type="date" value={rows[st.id]?.actual_date ?? ""} onChange={(e) => setField(st.id, "actual_date", e.target.value || null)} />
+                <input
+                  type="date"
+                  value={rows[st.id]?.actual_date ?? ""}
+                  onChange={(e) => setField(st.id, "actual_date", e.target.value || null)}
+                />
               </td>
 
               <td style={tdCenter}>
-                <input type="date" value={rows[st.id]?.approve_date ?? ""} onChange={(e) => setField(st.id, "approve_date", e.target.value || null)} />
+                <input
+                  type="date"
+                  value={rows[st.id]?.approve_date ?? ""}
+                  onChange={(e) => setField(st.id, "approve_date", e.target.value || null)}
+                />
               </td>
 
               <td style={tdTop}>
-                {st.sort_order === 7 ? (
+                {/* ✅ 여기: sort_order(7/8) 조건 → id("7"/"8") 조건 */}
+                {st.id === "7" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
                     <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input
@@ -795,7 +813,7 @@ export default function InputPage() {
                       외주설계
                     </label>
                   </div>
-                ) : st.sort_order === 8 ? (
+                ) : st.id === "8" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {[
                       ["vendor_assembly", "조립"],

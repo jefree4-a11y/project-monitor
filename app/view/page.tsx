@@ -56,6 +56,11 @@ function normalize(v?: string | null) {
   return (v ?? "").trim();
 }
 
+function date10(v?: string | null) {
+  const t = normalize(v);
+  return t ? t.slice(0, 10) : "";
+}
+
 function buildBaseRow(projectId: string, stageId: string): Update {
   return {
     id: null,
@@ -219,6 +224,9 @@ function ViewInner() {
     );
   }
 
+  const tdCenter: React.CSSProperties = { verticalAlign: "middle", textAlign: "center" };
+  const tdTop: React.CSSProperties = { verticalAlign: "top" };
+
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
@@ -358,34 +366,86 @@ function ViewInner() {
               const r = rows[st.id];
               return (
                 <tr key={st.id}>
+                  {/* ✅ 핵심: id + name (10.작업지시서 -> 1.작업지시서) */}
                   <td style={{ whiteSpace: "nowrap" }}>
-                    {st.sort_order}. {st.name}
+                    {st.id}. {st.name}
                   </td>
 
-                  <td style={{ verticalAlign: "middle", textAlign: "center" }}>{normalize(r?.assignee) || "-"}</td>
-                  <td style={{ verticalAlign: "middle", textAlign: "center" }}>{r?.plan_date ? r.plan_date.slice(0, 10) : "-"}</td>
-                  <td style={{ verticalAlign: "middle", textAlign: "center" }}>{r?.actual_date ? r.actual_date.slice(0, 10) : "-"}</td>
-                  <td style={{ verticalAlign: "middle", textAlign: "center" }}>{r?.approve_date ? r.approve_date.slice(0, 10) : "-"}</td>
+                  {/* ✅ 입력화면과 같은 박스 형태(읽기전용) */}
+                  <td style={tdCenter}>
+                    <input
+                      style={{ width: 70, textAlign: "center" }}
+                      value={normalize(r?.assignee)}
+                      readOnly
+                      disabled
+                    />
+                  </td>
 
-                  <td style={{ verticalAlign: "top" }}>
-                    {st.sort_order === 7 ? (
+                  <td style={tdCenter}>
+                    <input type="date" value={date10(r?.plan_date)} readOnly disabled />
+                  </td>
+
+                  <td style={tdCenter}>
+                    <input type="date" value={date10(r?.actual_date)} readOnly disabled />
+                  </td>
+
+                  <td style={tdCenter}>
+                    <input type="date" value={date10(r?.approve_date)} readOnly disabled />
+                  </td>
+
+                  {/* ✅ 비고: 점검회의(id="7") 체크박스 / 업체선정(id="8") 업체 입력칸 */}
+                  <td style={tdTop}>
+                    {st.id === "7" ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
-                        <div>설계업무: {r?.remark_design_work ? "✅" : "-"}</div>
-                        <div>외주설계: {r?.remark_outsource_design ? "✅" : "-"}</div>
+                        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <input type="checkbox" checked={!!r?.remark_design_work} readOnly disabled />
+                          설계업무
+                        </label>
+
+                        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <input type="checkbox" checked={!!r?.remark_outsource_design} readOnly disabled />
+                          외주설계
+                        </label>
                       </div>
-                    ) : st.sort_order === 8 ? (
+                    ) : st.id === "8" ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div>● 조립: {normalize(r?.vendor_assembly) || "-"}</div>
-                        <div>● 설치: {normalize(r?.vendor_install) || "-"}</div>
-                        <div>● 제어: {normalize(r?.vendor_control) || "-"}</div>
-                        <div>● 프로그램: {normalize(r?.vendor_program) || "-"}</div>
+                        {[
+                          ["vendor_assembly", "조립"],
+                          ["vendor_install", "설치"],
+                          ["vendor_control", "제어"],
+                          ["vendor_program", "프로그램"],
+                        ].map(([key, label]) => (
+                          <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ width: 80 }}>● {label}</span>
+                            <input
+                              style={{ width: 140 }}
+                              value={normalize((r as any)?.[key])}
+                              readOnly
+                              disabled
+                            />
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       "-"
                     )}
                   </td>
 
-                  <td style={{ verticalAlign: "top", whiteSpace: "pre-wrap" }}>{normalize(r?.memo) || "-"}</td>
+                  <td style={tdTop}>
+                    <textarea
+                      value={r?.memo ?? ""}
+                      readOnly
+                      disabled
+                      rows={1}
+                      style={{
+                        width: "100%",
+                        minHeight: 28,
+                        resize: "none",
+                        overflow: "hidden",
+                        lineHeight: "18px",
+                      }}
+                    />
+                  </td>
                 </tr>
               );
             })}
