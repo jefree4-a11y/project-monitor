@@ -27,10 +27,13 @@ type Update = {
   id: string | null;
   project_id: string;
   stage_id: string;
+
   assignee: string | null;
   plan_date: string | null;
   actual_date: string | null;
   approve_date: string | null;
+
+  meeting_type: string | null;
 
   remark_design_work: boolean;
   remark_outsource_design: boolean;
@@ -77,17 +80,24 @@ function buildBaseRow(projectId: string, stageId: string): Update {
     id: null,
     project_id: projectId,
     stage_id: stageId,
+
     assignee: null,
     plan_date: null,
     actual_date: null,
     approve_date: null,
+
+    meeting_type: null,
+
     remark_design_work: false,
     remark_outsource_design: false,
+
     vendor_assembly: null,
     vendor_install: null,
     vendor_control: null,
     vendor_program: null,
+
     memo: null,
+
     owner_pm: null,
     owner_design: null,
     owner_mech: null,
@@ -97,6 +107,7 @@ function buildBaseRow(projectId: string, stageId: string): Update {
   };
 }
 
+/** ✅ diff 대상 필드 */
 const DIFF_KEYS = [
   "assignee",
   "plan_date",
@@ -110,8 +121,39 @@ const DIFF_KEYS = [
   "vendor_control",
   "vendor_program",
   "memo",
-];
+] as const;
 
+/** ✅ 컬럼 → 표시명(타이틀) */
+const FIELD_LABEL: Record<string, string> = {
+  assignee: "담당자",
+  plan_date: "계획일",
+  actual_date: "실적일",
+  approve_date: "승인일",
+  meeting_type: "회의구분",
+  remark_design_work: "설계업무",
+  remark_outsource_design: "외주설계",
+  vendor_assembly: "업체(조립)",
+  vendor_install: "업체(설치)",
+  vendor_control: "업체(제어)",
+  vendor_program: "업체(프로그램)",
+  memo: "메모",
+};
+
+/** ✅ 값 표시 포맷 */
+function formatValue(key: string, v: any) {
+  if (v === null || v === undefined || v === "") return "-";
+
+  if (typeof v === "boolean") return v ? "✅" : "-";
+
+  // 날짜 키 처리
+  if ((key.endsWith("_date") || key.includes("date")) && typeof v === "string") {
+    return v.slice(0, 10);
+  }
+
+  return String(v);
+}
+
+/** ✅ old/new 비교해서 바뀐 필드만 추출 */
 function diffSummary(oldRow: any, newRow: any) {
   const o = oldRow ?? {};
   const n = newRow ?? {};
@@ -186,6 +228,7 @@ function ViewInner() {
     ];
   }, [rows, ownerStageId]);
 
+  /* ===== 데이터 로딩 ===== */
   useEffect(() => {
     if (!projectId) {
       setLoading(false);
@@ -214,8 +257,10 @@ function ViewInner() {
           .select(
             `
             id,
-            project_id, stage_id, assignee,
+            project_id, stage_id,
+            assignee,
             plan_date, actual_date, approve_date,
+            meeting_type,
             remark_design_work, remark_outsource_design,
             vendor_assembly, vendor_install, vendor_control, vendor_program,
             memo,
@@ -247,7 +292,7 @@ function ViewInner() {
     })();
   }, [projectId]);
 
-  // ✅ 수정 버튼: 로그인 안 되어 있으면 로그인으로 → 로그인 성공 후 입력화면으로
+  /* ===== 수정 버튼 ===== */
   async function goEdit() {
     if (!projectId) return;
 
@@ -262,9 +307,10 @@ function ViewInner() {
     router.push(`/login?redirectTo=${encodeURIComponent(editUrl)}`);
   }
 
-  // ✅ 단계 이력 조회 + 모달 오픈
+  /* ===== 이력 모달 ===== */
   async function openHistory(st: Stage) {
     if (!projectId) return;
+
     setHistoryStage(st);
     setHistoryOpen(true);
     setHistoryLoading(true);
@@ -307,6 +353,8 @@ function ViewInner() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyOpen]);
+
+  /* ===== render ===== */
 
   if (!projectId) {
     return (
@@ -536,7 +584,6 @@ function ViewInner() {
                     />
                   </td>
 
-                  {/* ✅ 이력보기 */}
                   <td style={{ ...tdTop, textAlign: "center" }}>
                     <button type="button" onClick={() => openHistory(st)} style={historyBtn}>
                       이력보기
@@ -596,7 +643,8 @@ function ViewInner() {
                             <ul style={{ margin: 0, paddingLeft: 16 }}>
                               {changes.map((c) => (
                                 <li key={c.key}>
-                                  <b>{c.key}</b>: {String(c.from)} → {String(c.to)}
+                                  <b>{FIELD_LABEL[c.key] ?? c.key}</b>: {formatValue(c.key, c.from)} →{" "}
+                                  {formatValue(c.key, c.to)}
                                 </li>
                               ))}
                             </ul>
