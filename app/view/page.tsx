@@ -50,6 +50,17 @@ type Update = {
   owner_matrix?: any | null; // jsonb
 };
 
+type HistoryRow = {
+  id: number;
+  action: "INSERT" | "UPDATE" | "DELETE";
+  changed_at: string;
+  stage_id: string;
+  changed_by_name: string | null;
+  changed_by_email: string | null;
+  old_row: any | null;
+  new_row: any | null;
+};
+
 /* ===================== 유틸 ===================== */
 
 function normalize(v?: string | null) {
@@ -86,6 +97,35 @@ function buildBaseRow(projectId: string, stageId: string): Update {
   };
 }
 
+const DIFF_KEYS = [
+  "assignee",
+  "plan_date",
+  "actual_date",
+  "approve_date",
+  "meeting_type",
+  "remark_design_work",
+  "remark_outsource_design",
+  "vendor_assembly",
+  "vendor_install",
+  "vendor_control",
+  "vendor_program",
+  "memo",
+];
+
+function diffSummary(oldRow: any, newRow: any) {
+  const o = oldRow ?? {};
+  const n = newRow ?? {};
+  const changes: { key: string; from: any; to: any }[] = [];
+
+  for (const k of DIFF_KEYS) {
+    const a = o[k];
+    const b = n[k];
+    const same = JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    if (!same) changes.push({ key: k, from: a ?? null, to: b ?? null });
+  }
+  return changes;
+}
+
 /* ===================== 실제 페이지 내용 ===================== */
 
 function ViewInner() {
@@ -100,12 +140,20 @@ function ViewInner() {
   const [stages, setStages] = useState<Stage[]>([]);
   const [rows, setRows] = useState<Record<string, Update>>({});
 
+  // ----- 이력 모달 상태 -----
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyStage, setHistoryStage] = useState<Stage | null>(null);
+  const [historyItems, setHistoryItems] = useState<HistoryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
   const stagesSorted = useMemo(() => {
     const list = [...stages];
     list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     return list;
   }, [stages]);
 
+  // 담당자 현황은 “첫 단계(정렬상 1등)” row에서 꺼냄
   const ownerStageId = useMemo(() => {
     if (!stagesSorted.length) return "";
     return stagesSorted[0].id;
@@ -158,6 +206,7 @@ function ViewInner() {
         setProject((p.data as Project) ?? null);
 
         const s = await supabase.from("stages").select("id, name, sort_order").order("sort_order");
+        if (s.error) throw s.error;
         setStages((s.data ?? []) as Stage[]);
 
         const u = await supabase
@@ -198,10 +247,11 @@ function ViewInner() {
     })();
   }, [projectId]);
 
+  // ✅ 수정 버튼: 로그인 안 되어 있으면 로그인으로 → 로그인 성공 후 입력화면으로
   async function goEdit() {
     if (!projectId) return;
 
-    const editUrl = `/input?projectId=${projectId}`;
+    const editUrl = `/input?projectId=${encodeURIComponent(projectId)}`;
     const { data } = await supabase.auth.getSession();
 
     if (data.session) {
@@ -211,6 +261,52 @@ function ViewInner() {
 
     router.push(`/login?redirectTo=${encodeURIComponent(editUrl)}`);
   }
+
+  // ✅ 단계 이력 조회 + 모달 오픈
+  async function openHistory(st: Stage) {
+    if (!projectId) return;
+    setHistoryStage(st);
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    setHistoryError(null);
+    setHistoryItems([]);
+
+    const { data, error } = await supabase
+      .from("stage_updates_history")
+      .select("id, action, changed_at, stage_id, changed_by_name, changed_by_email, old_row, new_row")
+      .eq("project_id", projectId)
+      .eq("stage_id", st.id)
+      .order("changed_at", { ascending: false })
+      .limit(200);
+
+    if (error) {
+      setHistoryError(error.message);
+      setHistoryLoading(false);
+      return;
+    }
+
+    setHistoryItems((data ?? []) as any);
+    setHistoryLoading(false);
+  }
+
+  function closeHistory() {
+    setHistoryOpen(false);
+    setHistoryStage(null);
+    setHistoryItems([]);
+    setHistoryError(null);
+    setHistoryLoading(false);
+  }
+
+  // ESC로 모달 닫기
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeHistory();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyOpen]);
 
   if (!projectId) {
     return (
@@ -229,6 +325,7 @@ function ViewInner() {
 
   return (
     <div style={{ padding: 16 }}>
+      {/* ===== 헤더 ===== */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
           <h2 style={{ margin: 0 }}>프로젝트 단계별 현황 (조회 전용)</h2>
@@ -265,6 +362,7 @@ function ViewInner() {
         </div>
       </div>
 
+      {/* ===== 프로젝트 + 담당자 현황 ===== */}
       {project && (
         <div
           style={{
@@ -347,6 +445,7 @@ function ViewInner() {
         </div>
       )}
 
+      {/* ===== 단계 테이블 ===== */}
       <div style={{ marginTop: 14 }}>
         <table border={1} cellPadding={4} style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
           <thead>
@@ -358,27 +457,23 @@ function ViewInner() {
               <th style={{ width: 170 }}>승인일(품질관리팀)</th>
               <th style={{ width: 220 }}>비고</th>
               <th>메모</th>
+              <th style={{ width: 90 }}>이력보기</th>
             </tr>
           </thead>
 
           <tbody>
             {stagesSorted.map((st) => {
               const r = rows[st.id];
+
               return (
                 <tr key={st.id}>
-                  {/* ✅ 핵심: id + name (10.작업지시서 -> 1.작업지시서) */}
+                  {/* ✅ 단계 표기 = id + name */}
                   <td style={{ whiteSpace: "nowrap" }}>
                     {st.id}. {st.name}
                   </td>
 
-                  {/* ✅ 입력화면과 같은 박스 형태(읽기전용) */}
                   <td style={tdCenter}>
-                    <input
-                      style={{ width: 70, textAlign: "center" }}
-                      value={normalize(r?.assignee)}
-                      readOnly
-                      disabled
-                    />
+                    <input style={{ width: 70, textAlign: "center" }} value={normalize(r?.assignee)} readOnly disabled />
                   </td>
 
                   <td style={tdCenter}>
@@ -393,7 +488,7 @@ function ViewInner() {
                     <input type="date" value={date10(r?.approve_date)} readOnly disabled />
                   </td>
 
-                  {/* ✅ 비고: 점검회의(id="7") 체크박스 / 업체선정(id="8") 업체 입력칸 */}
+                  {/* ✅ 비고: 점검회의(id="7") / 업체선정(id="8") */}
                   <td style={tdTop}>
                     {st.id === "7" ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
@@ -401,7 +496,6 @@ function ViewInner() {
                           <input type="checkbox" checked={!!r?.remark_design_work} readOnly disabled />
                           설계업무
                         </label>
-
                         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
                           <input type="checkbox" checked={!!r?.remark_outsource_design} readOnly disabled />
                           외주설계
@@ -417,12 +511,7 @@ function ViewInner() {
                         ].map(([key, label]) => (
                           <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ width: 80 }}>● {label}</span>
-                            <input
-                              style={{ width: 140 }}
-                              value={normalize((r as any)?.[key])}
-                              readOnly
-                              disabled
-                            />
+                            <input style={{ width: 140 }} value={normalize((r as any)?.[key])} readOnly disabled />
                           </div>
                         ))}
                       </div>
@@ -446,12 +535,86 @@ function ViewInner() {
                       }}
                     />
                   </td>
+
+                  {/* ✅ 이력보기 */}
+                  <td style={{ ...tdTop, textAlign: "center" }}>
+                    <button type="button" onClick={() => openHistory(st)} style={historyBtn}>
+                      이력보기
+                    </button>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      {/* ===== 이력 모달 ===== */}
+      {historyOpen && (
+        <div style={overlay} onClick={closeHistory}>
+          <div style={modal} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 16 }}>
+                  이력보기 - {historyStage?.id}. {historyStage?.name}
+                </div>
+                <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
+                  {project?.project_code} / {project?.name}
+                </div>
+              </div>
+              <button onClick={closeHistory} style={closeBtn}>
+                닫기
+              </button>
+            </div>
+
+            <div style={{ marginTop: 12, maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
+              {historyLoading ? (
+                <div>로딩 중...</div>
+              ) : historyError ? (
+                <div style={{ color: "red" }}>{historyError}</div>
+              ) : historyItems.length === 0 ? (
+                <div style={{ color: "#666" }}>이 단계의 변경 이력이 없습니다.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {historyItems.map((h) => {
+                    const changes = diffSummary(h.old_row, h.new_row);
+                    const who = (h.changed_by_name || "-") + (h.changed_by_email ? ` (${h.changed_by_email})` : "");
+
+                    return (
+                      <div key={h.id} style={historyCard}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                          <div style={{ fontSize: 12, color: "#334155" }}>
+                            <b>{h.action}</b> · {new Date(h.changed_at).toLocaleString()}
+                          </div>
+                          <div style={{ fontSize: 12, color: "#64748b" }}>{who}</div>
+                        </div>
+
+                        <div style={{ marginTop: 8, fontSize: 12 }}>
+                          {changes.length === 0 ? (
+                            <div style={{ color: "#64748b" }}>변경 필드가 감지되지 않았습니다.</div>
+                          ) : (
+                            <ul style={{ margin: 0, paddingLeft: 16 }}>
+                              {changes.map((c) => (
+                                <li key={c.key}>
+                                  <b>{c.key}</b>: {String(c.from)} → {String(c.to)}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
+              * ESC 키 또는 바깥 영역 클릭으로 닫을 수 있습니다.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -492,5 +655,48 @@ const ownerValueBox: React.CSSProperties = {
   fontSize: 12,
   display: "flex",
   alignItems: "center",
+  background: "white",
+};
+
+const historyBtn: React.CSSProperties = {
+  padding: "4px 8px",
+  border: "1px solid #cbd5e1",
+  borderRadius: 6,
+  background: "white",
+  cursor: "pointer",
+  fontSize: 12,
+};
+
+const overlay: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.35)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 16,
+  zIndex: 2000,
+};
+
+const modal: React.CSSProperties = {
+  width: "min(900px, 100%)",
+  background: "white",
+  borderRadius: 12,
+  padding: 16,
+  boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+};
+
+const closeBtn: React.CSSProperties = {
+  padding: "6px 10px",
+  border: "1px solid #cbd5e1",
+  borderRadius: 8,
+  background: "white",
+  cursor: "pointer",
+};
+
+const historyCard: React.CSSProperties = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 10,
+  padding: 10,
   background: "white",
 };
