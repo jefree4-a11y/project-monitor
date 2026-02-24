@@ -709,11 +709,7 @@ export default function InputPage() {
                         <tr key={rIdx}>
                           {(["pm", "design", "mech", "control", "safety"] as RoleKey[]).map((k) => (
                             <td key={k} style={ownerTdStyle}>
-                              <input
-                                value={row[k]}
-                                onChange={(e) => updateOwnerCell(rIdx, k, e.target.value)}
-                                style={ownerInputStyle}
-                              />
+                              <input value={row[k]} onChange={(e) => updateOwnerCell(rIdx, k, e.target.value)} style={ownerInputStyle} />
                             </td>
                           ))}
 
@@ -754,7 +750,6 @@ export default function InputPage() {
         <tbody>
           {stagesSorted.map((st) => (
             <tr key={st.id}>
-              {/* ✅ 여기: "sort_order + name" → "id + name" */}
               <td style={{ whiteSpace: "nowrap" }}>
                 {st.id}. {st.name}
               </td>
@@ -768,11 +763,7 @@ export default function InputPage() {
               </td>
 
               <td style={tdCenter}>
-                <input
-                  type="date"
-                  value={rows[st.id]?.plan_date ?? ""}
-                  onChange={(e) => onChangePlanDate(st.id, e.target.value || null)}
-                />
+                <input type="date" value={rows[st.id]?.plan_date ?? ""} onChange={(e) => onChangePlanDate(st.id, e.target.value || null)} />
               </td>
 
               <td style={tdCenter}>
@@ -791,9 +782,9 @@ export default function InputPage() {
                 />
               </td>
 
+              {/* ✅ 비고 위치 변경: 7(점검회의) → "-", 7-1(CHECK SHEET) → 체크박스 */}
               <td style={tdTop}>
-                {/* ✅ 여기: sort_order(7/8) 조건 → id("7"/"8") 조건 */}
-                {st.id === "7" ? (
+                {st.id === "7-1" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
                     <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input

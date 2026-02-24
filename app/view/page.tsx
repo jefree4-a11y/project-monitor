@@ -553,7 +553,7 @@ function ViewInner() {
 
                   {/* ✅ 비고: 점검회의(id="7") / 업체선정(id="8") */}
                   <td style={tdTop}>
-                    {st.id === "7" ? (
+                    {st.id === "7-1" ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
                         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
                           <input type="checkbox" checked={!!r?.remark_design_work} readOnly disabled />
