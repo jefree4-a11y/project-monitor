@@ -36,17 +36,6 @@ function toISODate(d: Date) {
 }
 
 /* ===================== 색상 로직 ===================== */
-/*
-완료(승인일 있음) → 녹색
-현재 < 계획 → 파랑(진행)
-현재 = 계획 → 주황(경고)
-현재 > 계획 → 빨강(초과)
-
-계획 없음:
-- assignee === 'N/A'            → 해당없음(회색)
-- assignee !== 'N/A'(NULL 포함) → 누락(노랑)
-*/
-
 const COLORS = {
   done: "#4caf50", // 완료
   progress: "#00e5ff", // 진행(파랑)
@@ -61,17 +50,14 @@ function normalizeAssignee(a?: string | null) {
 }
 
 function getColor(plan?: string | null, approve?: string | null, assignee?: string | null) {
-  // 1) 승인일 있으면 완료(최우선)
   if (approve) return COLORS.done;
 
-  // 2) 계획일 없으면: 해당없음/누락 분기
   if (!plan) {
     const a = normalizeAssignee(assignee);
-    if (a === "N/A") return COLORS.undetermined; // 해당없음
-    return COLORS.missing; // 누락 (NULL/"" 포함해서 N/A가 아니면 모두)
+    if (a === "N/A") return COLORS.undetermined;
+    return COLORS.missing;
   }
 
-  // 3) 계획일 있으면 날짜 비교
   const today = toISODate(new Date());
   const p = plan.slice(0, 10);
 
@@ -91,6 +77,10 @@ const thBase: React.CSSProperties = {
   fontSize: "12pt",
   height: 48,
   whiteSpace: "nowrap",
+  // 🔥 세로 스크롤 시 헤더 고정을 위한 속성 추가
+  position: "sticky",
+  top: 0,
+  zIndex: 10,
 };
 
 const tdBase: React.CSSProperties = {
@@ -104,9 +94,9 @@ const tdBase: React.CSSProperties = {
 function thStickyLeft(left: number, width: number): React.CSSProperties {
   return {
     ...thBase,
-    position: "sticky",
     left,
-    zIndex: 5,
+    // 🔥 좌측 고정 + 상단 고정이 겹치는 모서리 부분이므로 zIndex를 가장 높게 설정
+    zIndex: 15,
     width,
     minWidth: width,
     maxWidth: width,
@@ -119,7 +109,7 @@ function tdStickyLeft(left: number, width: number): React.CSSProperties {
     position: "sticky",
     left,
     background: "white",
-    zIndex: 3,
+    zIndex: 5, // 일반 td보다 높고 th보다는 낮게 설정
     width,
     minWidth: width,
     maxWidth: width,
@@ -226,45 +216,48 @@ export default function DashboardPage() {
   /* ===================== 화면 ===================== */
 
   return (
-    <div style={{ padding: 10 }}>
-      <h2 style={{ marginBottom: 6 }}>대시보드 (프로젝트 단계 현황)</h2>
-      <div style={{ color: "#666", marginBottom: 10, fontSize: 13 }}>
-        * 대시보드는 로그인 없이 조회 가능 / 수정은 “조회 화면”의 수정 버튼에서 로그인 후 가능합니다.
-      </div>
-
-      {/* 상단: 상태필터 + 조회수 */}
-      <div style={{ marginBottom: 12, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-        <div>
-          상태:
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
-            style={{ marginLeft: 6 }}
-          >
-            <option value="진행">진행</option>
-            <option value="보류">보류</option>
-            <option value="완료">완료</option>
-          </select>
+    // 🔥 화면 전체를 Flexbox로 만들고 100vh(전체 화면 높이)로 고정합니다.
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", padding: 10, boxSizing: "border-box" }}>
+      
+      {/* 상단: 스크롤되지 않고 고정되는 영역 */}
+      <div style={{ flexShrink: 0 }}>
+        <h2 style={{ marginBottom: 6 }}>대시보드 (프로젝트 단계 현황)</h2>
+        <div style={{ color: "#666", marginBottom: 10, fontSize: 13 }}>
+          * 대시보드는 로그인 없이 조회 가능 / 수정은 “조회 화면”의 수정 버튼에서 로그인 후 가능합니다.
         </div>
 
-        <div>조회 {projects.length}건</div>
+        {/* 필터 + 조회수 */}
+        <div style={{ marginBottom: 12, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+          <div>
+            상태:
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              style={{ marginLeft: 6 }}
+            >
+              <option value="진행">진행</option>
+              <option value="보류">보류</option>
+              <option value="완료">완료</option>
+            </select>
+          </div>
+          <div>조회 {projects.length}건</div>
+          {loading && <div style={{ color: "#666" }}>로딩 중...</div>}
+          {errorMsg && <div style={{ color: "red" }}>{errorMsg}</div>}
+        </div>
 
-        {loading && <div style={{ color: "#666" }}>로딩 중...</div>}
-        {errorMsg && <div style={{ color: "red" }}>{errorMsg}</div>}
+        {/* 범례 */}
+        <div style={{ marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Legend color={COLORS.done} label="완료" />
+          <Legend color={COLORS.progress} label="진행" />
+          <Legend color={COLORS.warn} label="경고" />
+          <Legend color={COLORS.over} label="초과" />
+          <Legend color={COLORS.missing} label="누락" />
+          <Legend color={COLORS.undetermined} label="해당없음" />
+        </div>
       </div>
 
-      {/* 범례 */}
-      <div style={{ marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <Legend color={COLORS.done} label="완료" />
-        <Legend color={COLORS.progress} label="진행" />
-        <Legend color={COLORS.warn} label="경고" />
-        <Legend color={COLORS.over} label="초과" />
-        <Legend color={COLORS.missing} label="누락" />
-        <Legend color={COLORS.undetermined} label="해당없음" />
-      </div>
-
-      {/* 테이블 */}
-      <div style={{ overflowX: "auto" }}>
+      {/* 테이블: 이 영역 안에서만 스크롤이 발생합니다. */}
+      <div style={{ flex: 1, overflow: "auto" }}>
         <table style={{ borderCollapse: "collapse", tableLayout: "fixed", width: "100%" }}>
           <thead>
             <tr>
@@ -286,7 +279,6 @@ export default function DashboardPage() {
               return (
                 <tr key={p.id}>
                   <td style={tdStickyLeft(0, 100)}>
-                    {/* ✅ 입력(/input)으로 가지 않고 조회(/view)로 이동 */}
                     <a href={`/view?projectId=${p.id}`} style={{ fontWeight: 800 }}>
                       {p.project_code}
                     </a>
