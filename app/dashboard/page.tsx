@@ -43,7 +43,7 @@ function toISODate(d: Date) {
 현재 > 계획 → 빨강(초과)
 
 계획 없음:
-- assignee === 'N/A'            → 미정(회색)
+- assignee === 'N/A'            → 해당없음(회색)
 - assignee !== 'N/A'(NULL 포함) → 누락(노랑)
 */
 
@@ -52,7 +52,7 @@ const COLORS = {
   progress: "#00e5ff", // 진행(파랑)
   warn: "#ff9800", // 경고
   over: "#ff4d4f", // 초과
-  undetermined: "#cfcfcf", // 미정(회색)
+  undetermined: "#cfcfcf", // 해당없음(회색)
   missing: "#ffe66b", // 누락(노랑)
 } as const;
 
@@ -64,10 +64,10 @@ function getColor(plan?: string | null, approve?: string | null, assignee?: stri
   // 1) 승인일 있으면 완료(최우선)
   if (approve) return COLORS.done;
 
-  // 2) 계획일 없으면: 미정/누락 분기
+  // 2) 계획일 없으면: 해당없음/누락 분기
   if (!plan) {
     const a = normalizeAssignee(assignee);
-    if (a === "N/A") return COLORS.undetermined; // 미정
+    if (a === "N/A") return COLORS.undetermined; // 해당없음
     return COLORS.missing; // 누락 (NULL/"" 포함해서 N/A가 아니면 모두)
   }
 
@@ -260,7 +260,7 @@ export default function DashboardPage() {
         <Legend color={COLORS.warn} label="경고" />
         <Legend color={COLORS.over} label="초과" />
         <Legend color={COLORS.missing} label="누락" />
-        <Legend color={COLORS.undetermined} label="미정" />
+        <Legend color={COLORS.undetermined} label="해당없음" />
       </div>
 
       {/* 테이블 */}
